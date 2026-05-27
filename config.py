@@ -1,0 +1,38 @@
+"""Environment-driven config for the backup bot."""
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
+APPLICATION_ID = os.getenv("APPLICATION_ID", "")
+
+# Permissions: View Channels + Read Message History + Send Messages +
+# Embed Links + Attach Files + Manage Webhooks (for restore).
+# 1024 + 65536 + 2048 + 16384 + 32768 + 536870912 = 536988288
+INVITE_PERMISSIONS = os.getenv("INVITE_PERMISSIONS", "536988288")
+
+# Optional dev guild ID for instant slash-command sync during development.
+DEV_GUILD_ID = os.getenv("DEV_GUILD_ID", "")
+
+# Where backups live on disk (Railway volume = /data).
+DATA_DIR = os.getenv("DATA_DIR", "/data") if os.path.exists("/data") \
+    else os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+# Cap message scrape per channel (0 = no cap, scrape everything).
+MAX_MESSAGES_PER_CHANNEL = int(os.getenv("MAX_MESSAGES_PER_CHANNEL", "0"))
+
+# Skip attachments larger than this many MB (avoid eating the disk).
+MAX_ATTACHMENT_MB = int(os.getenv("MAX_ATTACHMENT_MB", "50"))
+
+# Auto-backup interval in hours (0 = off).
+AUTO_BACKUP_HOURS = int(os.getenv("AUTO_BACKUP_HOURS", "0"))
+
+
+def invite_url() -> str:
+    if not APPLICATION_ID:
+        return ""
+    return ("https://discord.com/oauth2/authorize"
+            f"?client_id={APPLICATION_ID}"
+            f"&permissions={INVITE_PERMISSIONS}"
+            "&scope=bot%20applications.commands")

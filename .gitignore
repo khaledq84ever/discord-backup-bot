@@ -1,0 +1,16 @@
+# Secrets — never commit
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime data (backups, sqlite, attachments)
+data/
+*.db
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

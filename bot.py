@@ -1,0 +1,353 @@
+"""BackUp Bot — full Discord server archival (channels · roles · members ·
+messages · attachments · emojis). Arabic + English UX.
+
+Slash commands:
+  /backup            — run a full backup of this server
+  /backup_channel    — back up a single channel
+  /status            — last backup summary
+  /download          — DM the latest .zip snapshot to the caller
+  /schedule          — auto-backup every N hours (0 = off)
+  /search            — search saved messages by keyword
+  /help              — show all commands
+"""
+import asyncio
+import logging
+import os
+import time
+from typing import Optional
+
+import discord
+from discord import app_commands
+
+import backup
+import config
+import storage
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s  %(name)s  %(message)s")
+log = logging.getLogger("bot")
+
+# Privileged intents — must be enabled in the Developer Portal too.
+intents = discord.Intents.default()
+intents.members = True           # snapshot_members
+intents.message_content = True   # archive message text
+
+bot = discord.Client(intents=intents)
+tree = app_commands.CommandTree(bot)
+
+# A single in-flight backup task per guild, so /backup can't be spammed.
+in_flight: dict[int, backup.Progress] = {}
+# Auto-backup schedules, in hours, per guild.
+schedules: dict[int, int] = {}
+
+
+# --------------------------------------------------------------------------- #
+#  Lifecycle
+# --------------------------------------------------------------------------- #
+@bot.event
+async def on_ready():
+    if config.DEV_GUILD_ID:
+        g = discord.Object(id=int(config.DEV_GUILD_ID))
+        tree.copy_global_to(guild=g)
+        await tree.sync(guild=g)
+        log.info("synced to dev guild %s", config.DEV_GUILD_ID)
+    await tree.sync()
+    log.info("Logged in as %s — in %d guild(s).", bot.user, len(bot.guilds))
+    if config.AUTO_BACKUP_HOURS > 0:
+        for g in bot.guilds:
+            schedules[g.id] = config.AUTO_BACKUP_HOURS
+        bot.loop.create_task(_auto_loop())
+
+
+async def _auto_loop():
+    """Background loop: re-runs /backup for every scheduled guild."""
+    while True:
+        for guild_id, hours in list(schedules.items()):
+            try:
+                guild = bot.get_guild(guild_id)
+                if guild and guild_id not in in_flight:
+                    progress = backup.Progress()
+                    in_flight[guild_id] = progress
+                    try:
+                        await backup.run_backup(guild, progress)
+                        storage.make_zip(guild_id, "auto")
+                    finally:
+                        in_flight.pop(guild_id, None)
+            except Exception as e:
+                log.warning("auto-backup for %s failed: %s", guild_id, e)
+        # The shortest scheduled interval drives the loop cadence.
+        await asyncio.sleep(min(schedules.values(), default=24) * 3600)
+
+
+def _fmt_size(n: int) -> str:
+    units = ["B", "KB", "MB", "GB"]
+    i = 0
+    f = float(n)
+    while f >= 1024 and i < len(units) - 1:
+        f /= 1024
+        i += 1
+    return f"{f:.1f} {units[i]}"
+
+
+def _admin_only(interaction: discord.Interaction) -> bool:
+    """Only members with Manage Server or Administrator can run backups."""
+    p = interaction.user.guild_permissions  # type: ignore[union-attr]
+    return p.administrator or p.manage_guild
+
+
+# --------------------------------------------------------------------------- #
+#  /backup
+# --------------------------------------------------------------------------- #
+@tree.command(name="backup",
+              description="نسخة احتياطية كاملة للسيرفر / Full server backup")
+async def backup_cmd(interaction: discord.Interaction):
+    if not interaction.guild:
+        return await interaction.response.send_message(
+            "هذا الأمر داخل السيرفر فقط / server-only command.", ephemeral=True)
+    if not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ تحتاج صلاحية Manage Server / you need Manage Server.",
+            ephemeral=True)
+    if interaction.guild.id in in_flight:
+        return await interaction.response.send_message(
+            "⏳ في نسخة قيد التشغيل / a backup is already running.",
+            ephemeral=True)
+
+    await interaction.response.defer(thinking=True)
+    progress = backup.Progress()
+    in_flight[interaction.guild.id] = progress
+
+    async def _ticker():
+        """Edit the original message every 5 s with live progress."""
+        while interaction.guild.id in in_flight:
+            await asyncio.sleep(5)
+            try:
+                await interaction.edit_original_response(
+                    embed=_progress_embed(interaction.guild, progress, done=False))
+            except Exception:
+                break
+
+    bot.loop.create_task(_ticker())
+    try:
+        await backup.run_backup(interaction.guild, progress)
+        zip_path = storage.make_zip(interaction.guild.id, "manual")
+        zip_size = os.path.getsize(zip_path)
+    except Exception as e:
+        progress.error = str(e)
+        log.exception("backup error")
+        return await interaction.followup.send(f"💥 فشلت / failed: `{e}`")
+    finally:
+        in_flight.pop(interaction.guild.id, None)
+
+    await interaction.edit_original_response(
+        embed=_progress_embed(interaction.guild, progress, done=True,
+                              zip_path=zip_path, zip_size=zip_size))
+
+
+def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
+                    done: bool, zip_path: Optional[str] = None,
+                    zip_size: Optional[int] = None) -> discord.Embed:
+    pct = (p.channels_done / p.channels_total * 100) if p.channels_total else 0
+    bar_w = 18
+    filled = int(bar_w * pct / 100)
+    bar = "█" * filled + "░" * (bar_w - filled)
+    title = "✅ اكتمل النسخ / Backup complete" if done \
+            else "💾 جارٍ النسخ / Backup running"
+    e = discord.Embed(title=title, color=0x57F287 if done else 0x5865F2)
+    e.add_field(name="📁 Server", value=guild.name, inline=False)
+    e.add_field(name="📊 Progress",
+                value=f"`{bar}` {pct:.0f}%\n"
+                      f"{p.channels_done} / {p.channels_total} channels",
+                inline=False)
+    e.add_field(name="💬 Messages",    value=f"{p.messages:,}",     inline=True)
+    e.add_field(name="📎 Attachments", value=f"{p.attachments:,}",  inline=True)
+    e.add_field(name="💾 Downloaded",  value=_fmt_size(p.bytes),    inline=True)
+    e.add_field(name="⏱️ Elapsed",     value=f"{p.elapsed():.0f} s", inline=True)
+    if not done and p.current_channel:
+        e.add_field(name="🔄 Channel", value=f"#{p.current_channel}", inline=True)
+    if done and zip_path:
+        e.add_field(name="📦 Snapshot",
+                    value=f"`{os.path.basename(zip_path)}` ({_fmt_size(zip_size or 0)})",
+                    inline=False)
+        e.set_footer(text="Use /download to fetch the archive.")
+    return e
+
+
+# --------------------------------------------------------------------------- #
+#  /backup_channel
+# --------------------------------------------------------------------------- #
+@tree.command(name="backup_channel",
+              description="نسخة احتياطية لروم واحد / Back up one channel")
+@app_commands.describe(channel="الروم / which channel")
+async def backup_channel_cmd(interaction: discord.Interaction,
+                              channel: discord.TextChannel):
+    if not interaction.guild:
+        return
+    if not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+    await interaction.response.defer(thinking=True)
+    progress = backup.Progress()
+    in_flight[interaction.guild.id] = progress
+    try:
+        await backup.run_backup(interaction.guild, progress,
+                                specific_channel=channel)
+    except Exception as e:
+        return await interaction.followup.send(f"💥 فشل / failed: `{e}`")
+    finally:
+        in_flight.pop(interaction.guild.id, None)
+    await interaction.followup.send(
+        embed=_progress_embed(interaction.guild, progress, done=True))
+
+
+# --------------------------------------------------------------------------- #
+#  /status
+# --------------------------------------------------------------------------- #
+@tree.command(name="status",
+              description="معلومات آخر نسخة / Last backup info")
+async def status_cmd(interaction: discord.Interaction):
+    if not interaction.guild:
+        return
+    conn = storage.open_db(interaction.guild.id)
+    run = storage.latest_run(conn)
+    conn.close()
+    if not run:
+        return await interaction.response.send_message(
+            "ماكو نسخة بعد / no backups yet. Use **/backup** to create one.",
+            ephemeral=True)
+    folder_bytes = storage.dir_size(storage.guild_dir(interaction.guild.id))
+    e = discord.Embed(title="📊 آخر نسخة احتياطية / Latest backup",
+                      color=0x5865F2)
+    e.add_field(name="🕒 Started", value=run["started_at"], inline=True)
+    e.add_field(name="🕒 Ended",   value=run["ended_at"] or "—", inline=True)
+    e.add_field(name="📁 Channels", value=str(run["channels"]), inline=True)
+    e.add_field(name="💬 Messages", value=f"{run['messages']:,}", inline=True)
+    e.add_field(name="📎 Attachments", value=f"{run['attachments']:,}", inline=True)
+    e.add_field(name="💾 Bytes (DL)", value=_fmt_size(run["bytes"] or 0),
+                inline=True)
+    e.add_field(name="🗄️ On-disk total",
+                value=_fmt_size(folder_bytes), inline=True)
+    if run["error"]:
+        e.add_field(name="⚠️ Error", value=str(run["error"]), inline=False)
+    e.set_footer(text="Use /download to fetch the .zip snapshot.")
+    await interaction.response.send_message(embed=e, ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /download
+# --------------------------------------------------------------------------- #
+@tree.command(name="download",
+              description="حمّل آخر نسخة / Download the latest .zip snapshot")
+async def download_cmd(interaction: discord.Interaction):
+    if not interaction.guild or not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+    bdir = storage.backups_dir(interaction.guild.id)
+    zips = sorted(
+        (os.path.join(bdir, f) for f in os.listdir(bdir) if f.endswith(".zip")),
+        key=os.path.getmtime, reverse=True)
+    if not zips:
+        return await interaction.response.send_message(
+            "ماكو .zip بعد — جرّب /backup أوّل / no archive yet — run /backup first.",
+            ephemeral=True)
+    path = zips[0]
+    size = os.path.getsize(path)
+    # Discord limit for a normal bot upload is 25 MB; nitro-boosted servers
+    # raise it. Past that, point at the on-disk path instead.
+    if size > 25 * 1024 * 1024:
+        return await interaction.response.send_message(
+            f"📦 الأرشيف كبير ({_fmt_size(size)}) — حمّله من السيرفر:\n"
+            f"`{path}`\nfile too large for direct upload ({_fmt_size(size)}).",
+            ephemeral=True)
+    await interaction.response.send_message(
+        content="📦 آخر نسخة / latest archive:",
+        file=discord.File(path), ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /schedule
+# --------------------------------------------------------------------------- #
+@tree.command(name="schedule",
+              description="نسخ تلقائي كل N ساعة / Auto-backup every N hours (0=off)")
+@app_commands.describe(hours="عدد الساعات / interval in hours, 0 disables")
+async def schedule_cmd(interaction: discord.Interaction,
+                        hours: app_commands.Range[int, 0, 168]):
+    if not interaction.guild or not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+    if hours == 0:
+        schedules.pop(interaction.guild.id, None)
+        return await interaction.response.send_message(
+            "🛑 ألغيت الجدول / auto-backup disabled.", ephemeral=True)
+    first = interaction.guild.id not in schedules
+    schedules[interaction.guild.id] = hours
+    if first and not config.AUTO_BACKUP_HOURS:
+        bot.loop.create_task(_auto_loop())
+    await interaction.response.send_message(
+        f"🗓️ مفعّل — كل **{hours}** ساعة / scheduled every **{hours}h**.",
+        ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /search
+# --------------------------------------------------------------------------- #
+@tree.command(name="search",
+              description="ابحث في النسخة المحفوظة / Search archived messages")
+@app_commands.describe(query="الكلمة / search words")
+async def search_cmd(interaction: discord.Interaction, query: str):
+    if not interaction.guild:
+        return
+    conn = storage.open_db(interaction.guild.id)
+    rows = conn.execute(
+        """SELECT channel_name, author_name, content, created_at
+           FROM messages
+           WHERE content LIKE ?
+           ORDER BY created_at DESC LIMIT 10""",
+        (f"%{query}%",)).fetchall()
+    conn.close()
+    if not rows:
+        return await interaction.response.send_message(
+            f"ماكو نتيجة عن `{query}` / no hits for `{query}`.",
+            ephemeral=True)
+    lines = []
+    for ch, who, txt, when in rows:
+        snippet = (txt or "").replace("\n", " ")[:120]
+        lines.append(f"`#{ch}` · **{who}** · {when[:10]}\n> {snippet}")
+    embed = discord.Embed(title=f"🔍 {query}",
+                          description="\n\n".join(lines),
+                          color=0x5865F2)
+    embed.set_footer(text=f"Top {len(rows)} matches")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /help
+# --------------------------------------------------------------------------- #
+@tree.command(name="help", description="الأوامر / Commands")
+async def help_cmd(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="💾 BackUp Bot — الأوامر / Commands",
+        description=(
+            "**/backup** — نسخة كاملة للسيرفر / full server backup\n"
+            "**/backup_channel** `<channel>` — روم واحد فقط / one channel only\n"
+            "**/status** — معلومات آخر نسخة / last backup info\n"
+            "**/download** — حمّل آخر `.zip` / fetch the latest archive\n"
+            "**/schedule** `<hours>` — نسخ تلقائي / auto-backup every N h\n"
+            "**/search** `<query>` — ابحث في الرسائل / search archived msgs\n\n"
+            "Backups capture **everything**: channels, roles, members "
+            "(incl. admins), every message, embeds, reactions, mentions, "
+            "and downloaded attachments.\n\n"
+            "**Required intents** (Developer Portal → Bot):\n"
+            "• Server Members Intent\n"
+            "• Message Content Intent"
+        ),
+        color=0x5865F2,
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+if __name__ == "__main__":
+    if not config.DISCORD_TOKEN:
+        raise SystemExit("DISCORD_TOKEN is not set — see .env.example")
+    os.makedirs(config.DATA_DIR, exist_ok=True)
+    bot.run(config.DISCORD_TOKEN)
