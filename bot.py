@@ -11,6 +11,7 @@ Slash commands:
   /help              — show all commands
 """
 import asyncio
+import hashlib
 import logging
 import os
 import time
@@ -18,6 +19,7 @@ from typing import Optional
 
 import discord
 from discord import app_commands
+from aiohttp import web
 
 import backup
 import config
@@ -34,6 +36,51 @@ intents.message_content = True   # archive message text
 
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
+
+# --------------------------------------------------------------------------- #
+#  Download web server — serves big .zip snapshots that exceed Discord's 25 MB
+#  upload cap, behind a secret token so the link is private (not browsable).
+# --------------------------------------------------------------------------- #
+_PORT = int(os.getenv("PORT", "8080"))
+_PUBLIC_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+# Stable, unguessable secret. Set DOWNLOAD_SECRET to override; otherwise derived
+# from the bot token so links survive restarts without extra config.
+DOWNLOAD_SECRET = (os.getenv("DOWNLOAD_SECRET", "").strip()
+                   or hashlib.sha256((config.DISCORD_TOKEN or "x").encode()).hexdigest()[:24])
+_web_started = False
+
+
+def _download_link(guild_id: int, filename: str) -> Optional[str]:
+    if not _PUBLIC_DOMAIN:
+        return None
+    return f"https://{_PUBLIC_DOMAIN}/dl/{DOWNLOAD_SECRET}/{guild_id}/{filename}"
+
+
+async def _h_health(request):
+    return web.Response(text="BackUp Bot — OK")
+
+
+async def _h_download(request):
+    if request.match_info["token"] != DOWNLOAD_SECRET:
+        return web.Response(status=403, text="forbidden")
+    gid, fname = request.match_info["gid"], request.match_info["fname"]
+    if not gid.isdigit() or "/" in fname or ".." in fname or not fname.endswith(".zip"):
+        return web.Response(status=400, text="bad request")
+    path = os.path.join(storage.backups_dir(int(gid)), fname)
+    if not os.path.isfile(path):
+        return web.Response(status=404, text="not found")
+    return web.FileResponse(
+        path, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+async def _start_webserver():
+    app = web.Application(client_max_size=0)
+    app.router.add_get("/", _h_health)
+    app.router.add_get("/dl/{token}/{gid}/{fname}", _h_download)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, "0.0.0.0", _PORT).start()
+    log.info("download web server listening on :%d (public=%s)", _PORT, _PUBLIC_DOMAIN or "none")
 
 # A single in-flight backup task per guild, so /backup can't be spammed.
 in_flight: dict[int, backup.Progress] = {}
@@ -53,6 +100,10 @@ async def on_ready():
         log.info("synced to dev guild %s", config.DEV_GUILD_ID)
     await tree.sync()
     log.info("Logged in as %s — in %d guild(s).", bot.user, len(bot.guilds))
+    global _web_started
+    if not _web_started:
+        _web_started = True
+        bot.loop.create_task(_start_webserver())
     if config.AUTO_BACKUP_HOURS > 0:
         for g in bot.guilds:
             schedules[g.id] = config.AUTO_BACKUP_HOURS
@@ -255,6 +306,12 @@ async def download_cmd(interaction: discord.Interaction):
     # Discord limit for a normal bot upload is 25 MB; nitro-boosted servers
     # raise it. Past that, point at the on-disk path instead.
     if size > 25 * 1024 * 1024:
+        link = _download_link(interaction.guild.id, os.path.basename(path))
+        if link:
+            return await interaction.response.send_message(
+                f"📦 الأرشيف كبير ({_fmt_size(size)}) — حمّله من هنا (رابط خاص):\n{link}\n"
+                f"⬇️ Large archive — download via this private link.",
+                ephemeral=True)
         return await interaction.response.send_message(
             f"📦 الأرشيف كبير ({_fmt_size(size)}) — حمّله من السيرفر:\n"
             f"`{path}`\nfile too large for direct upload ({_fmt_size(size)}).",
