@@ -194,7 +194,9 @@ def _admin_only(interaction: discord.Interaction) -> bool:
 # --------------------------------------------------------------------------- #
 @tree.command(name="backup",
               description="نسخة احتياطية كاملة للسيرفر / Full server backup")
-async def backup_cmd(interaction: discord.Interaction):
+@app_commands.describe(
+    force="تجاهل نسخة عالقة وابدأ من جديد / clear a stuck backup and restart (resumes where it stopped)")
+async def backup_cmd(interaction: discord.Interaction, force: bool = False):
     if not interaction.guild:
         return await interaction.response.send_message(
             "هذا الأمر داخل السيرفر فقط / server-only command.", ephemeral=True)
@@ -203,9 +205,18 @@ async def backup_cmd(interaction: discord.Interaction):
             "⛔ تحتاج صلاحية Manage Server / you need Manage Server.",
             ephemeral=True)
     if interaction.guild.id in in_flight:
-        return await interaction.response.send_message(
-            "⏳ في نسخة قيد التشغيل / a backup is already running.",
-            ephemeral=True)
+        if not force:
+            return await interaction.response.send_message(
+                "⏳ في نسخة قيد التشغيل / a backup is already running.\n"
+                "لو علِقت، استخدم **/backup force:True** لإعادة التشغيل من حيث وقف.\n"
+                "If it's stuck, run **/backup force:True** to restart (resumes where it stopped).",
+                ephemeral=True)
+        # Force: clear the stuck entry. Mark the old progress cancelled so any
+        # lingering task stops, then start fresh (incremental — resumes from last saved).
+        old = in_flight.pop(interaction.guild.id, None)
+        if old is not None:
+            old.cancelled = True
+        log.warning("force-cleared stuck backup for guild %s", interaction.guild.id)
 
     await interaction.response.defer(thinking=True)
     progress = backup.Progress()
