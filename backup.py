@@ -288,7 +288,7 @@ async def _all_message_channels(guild: discord.Guild) -> list:
             try:
                 async for t in c.archived_threads(limit=None, private=private):
                     add(t)
-            except (discord.Forbidden, discord.HTTPException, AttributeError):
+            except Exception:  # noqa: BLE001 — forbidden/forum-no-private/etc.; best-effort
                 pass
     return out
 
