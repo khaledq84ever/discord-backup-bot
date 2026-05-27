@@ -3,238 +3,508 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BackUp Bot — احفظ سيرفر ديسكورد كامل</title>
-<meta name="description" content="نسخة احتياطية كاملة لسيرفرات ديسكورد: روومات، رولات، أعضاء، رسائل، صور، مرفقات. أرشيف 100% للحماية من الحذف.">
+<title>BackUp Bot — احفظ سيرفر ديسكورد كامل للأبد</title>
+<meta name="description" content="بوت نسخ احتياطي كامل لسيرفرات ديسكورد. يحفظ كل الرسائل، الرومات، الرولات، الأعضاء، الصور والمرفقات. حماية من الحذف.">
 <meta property="og:title" content="BackUp Bot — نسخة احتياطية كاملة لديسكورد">
-<meta property="og:description" content="احفظ كل شي في سيرفرك: رسائل، صور، أعضاء، رولات، رومز. أرشيف آمن للأبد.">
+<meta property="og:description" content="احفظ سيرفرك من الحذف: رسائل، صور، أعضاء، رولات، رومز — كل شي للأبد.">
+<meta property="og:image" content="/preview.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235865F2'/%3E%3Cpath d='M32 14L48 21V32C48 41 41 48 32 50C23 48 16 41 16 32V21L32 14Z' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Cpath d='M24 32L29 37L40 25' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --navy: #0a0e27;
-    --card: #141a3a;
-    --card-hi: #1c244e;
-    --line: #26305e;
-    --muted: #9aa6d4;
-    --dim: #7682af;
-    --red: #e8001c;
-    --gold: #d4a843;
+    --bg: #ffffff;
+    --bg-alt: #f6f7fb;
+    --ink: #0a0a0a;
+    --muted: #525866;
+    --line: #e4e7ee;
+    --line-strong: #cdd2dd;
     --blurple: #5865f2;
-    --green: #57f287;
-    --pink: #ec54b2;
+    --blurple-dark: #4452d4;
+    --gold: #d4a843;
+    --red: #e8001c;
+    --green: #1f9d55;
   }
-  html { background: var(--navy); color: #fff; }
+  html { background: var(--bg); color: var(--ink); }
   body {
-    font-family: 'Tajawal', 'Inter', system-ui, sans-serif;
-    background: radial-gradient(ellipse at 80% -10%, rgba(232,0,28,0.35), transparent 55%),
-                radial-gradient(ellipse at -10% 90%, rgba(88,101,242,0.30), transparent 55%),
-                var(--navy);
-    min-height: 100vh;
-    line-height: 1.5;
-    overflow-x: hidden;
+    font-family: 'Cairo', 'Tajawal', 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
   }
+  body[dir="rtl"] { letter-spacing: 0; }
+
+  /* ---------- nav ---------- */
   .nav {
     position: sticky; top: 0; z-index: 50;
-    backdrop-filter: blur(14px); background: rgba(10,14,39,0.7);
+    backdrop-filter: blur(12px); background: rgba(255,255,255,0.88);
     border-bottom: 1px solid var(--line);
   }
   .nav-inner {
-    max-width: 1180px; margin: 0 auto; padding: 14px 22px;
-    display: flex; align-items: center; gap: 14px; justify-content: space-between;
+    max-width: 1180px; margin: 0 auto; padding: 16px 22px;
+    display: flex; align-items: center; gap: 18px; justify-content: space-between;
   }
-  .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 18px; }
-  .brand-mark {
-    width: 36px; height: 36px; border-radius: 10px;
-    background: linear-gradient(135deg, var(--blurple), var(--red));
-    display: grid; place-items: center; font-weight: 900; font-size: 20px;
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    color: var(--ink); text-decoration: none;
+    font-family: 'Inter', sans-serif; font-weight: 900; font-size: 20px;
   }
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 10px 18px; border-radius: 12px; font-weight: 700;
-    text-decoration: none; transition: transform .15s, box-shadow .15s;
+  .brand-icon {
+    width: 40px; height: 40px; border-radius: 11px;
+    background: var(--blurple); display: grid; place-items: center;
+    box-shadow: 0 4px 14px rgba(88,101,242,0.25);
   }
-  .btn:hover { transform: translateY(-1px); }
-  .btn-primary { background: var(--blurple); color: #fff;
-                 box-shadow: 0 6px 20px rgba(88,101,242,0.4); }
-  .btn-primary:hover { box-shadow: 0 10px 30px rgba(88,101,242,0.55); }
-  .btn-ghost { background: var(--card-hi); color: #fff; border: 1px solid var(--line); }
+  .brand-icon svg { width: 24px; height: 24px; }
+  .brand .name { font-weight: 900; letter-spacing: -0.3px; }
 
-  .hero { padding: 110px 22px 60px; text-align: center; max-width: 980px; margin: 0 auto; }
+  .nav-links { display: flex; gap: 26px; }
+  .nav-links a { color: var(--ink); text-decoration: none; font-weight: 700; font-size: 15px; }
+  .nav-links a:hover { color: var(--blurple); }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 13px 22px; border-radius: 12px;
+    font-weight: 800; font-size: 16px; text-decoration: none;
+    transition: transform .15s, box-shadow .15s;
+    font-family: inherit;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn svg { width: 20px; height: 20px; }
+  .btn-primary {
+    background: var(--blurple); color: #fff;
+    box-shadow: 0 6px 20px rgba(88,101,242,0.32);
+  }
+  .btn-primary:hover { background: var(--blurple-dark);
+                       box-shadow: 0 12px 28px rgba(88,101,242,0.42); }
+  .btn-ghost {
+    background: #fff; color: var(--ink);
+    border: 2px solid var(--line-strong);
+  }
+  .btn-ghost:hover { border-color: var(--ink); }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 80px 22px 50px; max-width: 1180px; margin: 0 auto; text-align: center; }
   .pill {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 7px 16px; border-radius: 999px;
-    background: rgba(87,242,135,0.1); color: var(--green);
-    font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 700;
-    border: 1px solid rgba(87,242,135,0.3); margin-bottom: 18px;
+    background: #ecfdf5; color: var(--green);
+    font-weight: 800; font-size: 13px; margin-bottom: 24px;
+    font-family: 'Inter', sans-serif;
+    border: 1px solid #a7f3d0;
   }
   .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
   h1 {
-    font-family: 'Inter', sans-serif;
-    font-size: clamp(40px, 7vw, 84px); font-weight: 900;
-    line-height: 1.05; letter-spacing: -2px; margin-bottom: 18px;
+    color: var(--ink); font-weight: 900;
+    font-size: clamp(40px, 7vw, 88px);
+    line-height: 1.08; letter-spacing: -1.5px;
+    margin-bottom: 18px;
   }
-  h1 .grad {
-    background: linear-gradient(135deg, var(--gold), var(--red));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text;
+  h1 .accent { color: var(--blurple); }
+  .hero-sub {
+    color: var(--muted); font-size: clamp(18px, 2.4vw, 22px);
+    font-weight: 600; max-width: 720px; margin: 0 auto 12px;
   }
-  .sub-en { color: var(--muted); font-size: clamp(18px, 2.4vw, 24px); font-family: 'Inter', sans-serif; font-weight: 500; margin-bottom: 8px; }
-  .sub-ar { color: var(--gold); font-size: clamp(17px, 2.2vw, 22px); font-weight: 700; margin-bottom: 36px; }
-  .btnrow { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .hero-en {
+    color: var(--muted); font-size: clamp(15px, 1.7vw, 17px);
+    font-family: 'Inter', sans-serif; font-weight: 500;
+    max-width: 720px; margin: 0 auto 36px;
+  }
+  .btnrow { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
 
-  .grid {
-    max-width: 1180px; margin: 60px auto; padding: 0 22px;
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  /* ---------- preview card ---------- */
+  .preview {
+    max-width: 980px; margin: 60px auto 0; padding: 0 22px;
+  }
+  .preview-card {
+    background: #1a1c2a; color: #fff;
+    border-radius: 22px; padding: 38px;
+    box-shadow: 0 30px 70px -20px rgba(20,22,40,0.4);
+  }
+  .preview-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .preview-icon {
+    width: 50px; height: 50px; border-radius: 13px;
+    background: #57f287; display: grid; place-items: center;
+    color: #0a0a0a;
+  }
+  .preview-title { font-family: 'Inter', sans-serif; font-weight: 800; font-size: 24px; }
+  .preview-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; }
+  .stat {
+    flex: 1 1 200px;
+    background: #232636; border-radius: 14px; padding: 18px;
+    border-top: 3px solid var(--blurple);
+    font-family: 'Inter', sans-serif;
+  }
+  .stat.gold  { border-top-color: var(--gold); }
+  .stat.red   { border-top-color: var(--red); }
+  .stat.green { border-top-color: var(--green); }
+  .stat-label { color: #9aa6d4; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+  .stat-value { font-size: 28px; font-weight: 800; }
+
+  /* ---------- section ---------- */
+  section.features { padding: 90px 22px; max-width: 1180px; margin: 0 auto; }
+  .section-head { text-align: center; margin-bottom: 50px; }
+  .section-head h2 {
+    color: var(--ink); font-weight: 900;
+    font-size: clamp(32px, 5vw, 52px); letter-spacing: -1px; margin-bottom: 10px;
+  }
+  .section-head p { color: var(--muted); font-size: 17px; font-weight: 600; }
+
+  .feature-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 18px;
   }
   .feature {
-    background: var(--card); border: 1px solid var(--line);
-    padding: 26px 22px; border-radius: 18px;
+    background: var(--bg-alt); border: 1px solid var(--line);
+    padding: 30px 26px; border-radius: 18px;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
   }
-  .feature .icon {
-    width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
-    background: var(--card-hi); margin-bottom: 14px;
+  .feature:hover {
+    transform: translateY(-3px); border-color: var(--blurple);
+    box-shadow: 0 16px 40px -20px rgba(88,101,242,0.4);
   }
-  .feature h3 { font-family: 'Inter', sans-serif; font-size: 20px; font-weight: 800; margin-bottom: 6px; }
-  .feature h3 + .ar { color: var(--gold); font-weight: 700; font-size: 16px; margin-bottom: 10px; }
-  .feature p { color: var(--muted); font-family: 'Inter', sans-serif; font-size: 15px; }
+  .feature-icon {
+    width: 52px; height: 52px; border-radius: 13px;
+    display: grid; place-items: center; margin-bottom: 18px;
+  }
+  .feature-icon.b { background: #ecf0fe; color: var(--blurple); }
+  .feature-icon.g { background: #ecfdf5; color: var(--green); }
+  .feature-icon.r { background: #fef2f2; color: var(--red); }
+  .feature-icon.y { background: #fefce8; color: var(--gold); }
+  .feature-icon.p { background: #f5f3ff; color: #7c3aed; }
+  .feature-icon.pk { background: #fdf2f8; color: #db2777; }
+  .feature-icon svg { width: 28px; height: 28px; }
+  .feature h3 { color: var(--ink); font-weight: 900; font-size: 22px; margin-bottom: 4px; }
+  .feature .en { color: var(--muted); font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px; margin-bottom: 12px; }
+  .feature p { color: var(--muted); font-size: 15px; font-weight: 500; }
 
-  .cmds {
-    max-width: 1180px; margin: 60px auto; padding: 0 22px;
+  /* ---------- commands ---------- */
+  section.cmds { padding: 90px 22px; max-width: 1180px; margin: 0 auto; background: var(--bg-alt); }
+  .cmds-wrap { background: var(--bg-alt); }
+  .cmd-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
   }
-  .cmds h2 { text-align: center; font-family: 'Inter', sans-serif; font-size: clamp(32px, 5vw, 48px); font-weight: 900; margin-bottom: 8px; }
-  .cmds h2 + p { text-align: center; color: var(--muted); margin-bottom: 32px; font-family: 'Inter', sans-serif; }
-  .cmd-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
   .cmd {
-    background: var(--card); border: 1px solid var(--line); padding: 18px;
-    border-radius: 14px; border-right: 4px solid var(--accent, var(--blurple));
+    background: #fff; border: 1px solid var(--line); padding: 22px;
+    border-radius: 14px; border-right: 5px solid var(--blurple);
+    display: flex; align-items: center; gap: 16px;
   }
-  .cmd code { font-family: 'Inter', monospace; color: #fff; font-weight: 700; font-size: 16px; display: block; margin-bottom: 4px; }
-  .cmd small { color: var(--muted); font-family: 'Inter', sans-serif; font-size: 14px; }
+  .cmd-icon {
+    width: 44px; height: 44px; border-radius: 11px;
+    background: #ecf0fe; color: var(--blurple);
+    display: grid; place-items: center; flex-shrink: 0;
+  }
+  .cmd-icon svg { width: 22px; height: 22px; }
+  .cmd code {
+    font-family: 'Inter', monospace; color: var(--ink); font-weight: 800;
+    font-size: 16px; display: block; margin-bottom: 3px;
+    background: none; padding: 0;
+  }
+  .cmd small { color: var(--muted); font-size: 14px; font-weight: 600; }
 
+  /* ---------- cta ---------- */
+  .cta-wrap { padding: 70px 22px 30px; }
   .cta {
-    max-width: 760px; margin: 90px auto 60px; padding: 50px 22px; text-align: center;
-    background: linear-gradient(135deg, rgba(88,101,242,0.18), rgba(232,0,28,0.18));
-    border: 1px solid var(--line); border-radius: 24px;
+    max-width: 880px; margin: 0 auto; padding: 56px 28px; text-align: center;
+    background: linear-gradient(135deg, var(--blurple), var(--blurple-dark));
+    border-radius: 28px; color: #fff;
+    box-shadow: 0 24px 60px -20px rgba(88,101,242,0.55);
   }
-  .cta h2 { font-family: 'Inter', sans-serif; font-size: clamp(28px, 5vw, 44px); font-weight: 900; margin-bottom: 10px; }
-  .cta p { color: var(--muted); margin-bottom: 24px; font-family: 'Inter', sans-serif; }
+  .cta h2 { color: #fff; font-weight: 900; font-size: clamp(28px, 5vw, 46px); margin-bottom: 12px; letter-spacing: -1px; }
+  .cta p { color: rgba(255,255,255,0.86); font-weight: 600; margin-bottom: 28px; font-size: 17px; }
+  .cta .btn-primary { background: #fff; color: var(--blurple); }
+  .cta .btn-primary:hover { background: #f0f1ff; }
+  .cta .btn-ghost { background: transparent; border-color: rgba(255,255,255,0.4); color: #fff; }
+  .cta .btn-ghost:hover { border-color: #fff; }
 
+  /* ---------- footer ---------- */
   footer {
-    text-align: center; padding: 30px 22px 60px; color: var(--dim);
-    font-family: 'Inter', sans-serif; font-size: 14px;
+    text-align: center; padding: 36px 22px 50px; color: var(--muted);
+    font-size: 14px; font-weight: 600;
+    border-top: 1px solid var(--line);
   }
-  footer a { color: var(--gold); text-decoration: none; font-weight: 700; }
+  footer a { color: var(--blurple); text-decoration: none; font-weight: 800; }
   .credit {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 8px 16px; border-radius: 999px; background: var(--card-hi);
-    border: 1px solid var(--line); text-decoration: none; color: #fff;
-    font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 700;
+    padding: 9px 18px; border-radius: 999px; background: var(--bg-alt);
+    border: 1px solid var(--line); text-decoration: none; color: var(--ink);
+    font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 800;
     margin-top: 12px;
   }
 
-  @media (max-width: 560px) {
-    .nav-inner { padding: 12px 16px; }
-    .brand span:last-child { display: none; }
+  /* ---------- mobile ---------- */
+  @media (max-width: 720px) {
+    .nav-links { display: none; }
     .btnrow .btn { width: 100%; justify-content: center; }
+    .hero { padding: 50px 22px 30px; }
+    .preview-card { padding: 24px 18px; }
+    .preview-row { gap: 10px; }
+    .stat { flex-basis: calc(50% - 5px); padding: 14px; }
+    .stat-value { font-size: 22px; }
+    section.features, section.cmds { padding: 60px 16px; }
   }
 </style>
 </head>
 <body>
 
+<!-- ─── NAV ─── -->
 <nav class="nav">
   <div class="nav-inner">
-    <a href="/" class="brand" style="color:#fff; text-decoration:none;">
-      <div class="brand-mark">B</div>
-      <span>BackUp Bot</span>
+    <a href="/" class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 64 64" fill="none">
+          <path d="M32 8L52 16V32C52 43 44 52 32 56C20 52 12 43 12 32V16L32 8Z" fill="none" stroke="#fff" stroke-width="4"/>
+          <path d="M22 32L29 39L42 24" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <span class="name">BackUp Bot</span>
     </a>
-    <a class="btn btn-primary" href="#add">➕ <span>Add to Discord</span></a>
+    <div class="nav-links">
+      <a href="#features">المميزات</a>
+      <a href="#commands">الأوامر</a>
+      <a href="https://github.com/khaledq84ever/discord-backup-bot">GitHub</a>
+    </div>
+    <a class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5v14m-7-7h14" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>
+      <span>أضفه لسيرفرك</span>
+    </a>
   </div>
 </nav>
 
+<!-- ─── HERO ─── -->
 <section class="hero">
-  <div class="pill"><span class="dot"></span> 100% Server archival</div>
-  <h1>احفظ سيرفرك <span class="grad">للأبد</span></h1>
-  <p class="sub-en">Full Discord backup — every channel, role, member, message &amp; attachment</p>
-  <p class="sub-ar">نسخة احتياطية كاملة 100% — حماية من الحذف، استرجاع متى ما تبي</p>
+  <div class="pill"><span class="dot"></span> أرشيف 100% لسيرفر ديسكورد</div>
+  <h1>احفظ سيرفرك <span class="accent">للأبد</span></h1>
+  <p class="hero-sub">بوت نسخ احتياطي كامل — رسائل، صور، رومز، رولات، أعضاء — كل شي محفوظ، محمي من الحذف.</p>
+  <p class="hero-en">Full Discord server backup — channels, roles, members, messages, embeds, reactions, and every attachment downloaded to disk before CDN URLs expire.</p>
   <div class="btnrow">
-    <a id="add" class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">➕ Add to Discord</a>
-    <a class="btn btn-ghost" href="https://github.com/khaledq84ever/discord-backup-bot">⭐ GitHub</a>
+    <a class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5v14m-7-7h14" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>
+      أضفه لديسكورد
+    </a>
+    <a class="btn btn-ghost" href="https://github.com/khaledq84ever/discord-backup-bot">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.87 10.91.58.1.78-.25.78-.55v-1.94c-3.2.7-3.87-1.37-3.87-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.04-.71.08-.69.08-.69 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.18a10.93 10.93 0 0 1 5.74 0c2.2-1.49 3.16-1.18 3.16-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.15v3.18c0 .31.21.66.79.55C20.22 21.38 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
+      المصدر على GitHub
+    </a>
   </div>
 </section>
 
-<section class="grid">
-  <div class="feature">
-    <div class="icon" style="background:rgba(88,101,242,0.2); color:var(--blurple);">📁</div>
-    <h3>Every channel</h3>
-    <div class="ar">كل الرومات</div>
-    <p>Text, voice (with text), threads, forums — all archived with their topics, slow-mode, permissions, and category structure.</p>
-  </div>
-  <div class="feature">
-    <div class="icon" style="background:rgba(212,168,67,0.2); color:var(--gold);">💬</div>
-    <h3>Every message</h3>
-    <div class="ar">كل رسالة</div>
-    <p>Full text, embeds, reactions, mentions, replies, edits, pins, and timestamps. Searchable later with <code>/search</code>.</p>
-  </div>
-  <div class="feature">
-    <div class="icon" style="background:rgba(232,0,28,0.2); color:var(--red);">📎</div>
-    <h3>Images &amp; files</h3>
-    <div class="ar">الصور والمرفقات</div>
-    <p>Every attachment is downloaded to disk before its CDN link expires. Pictures stay yours.</p>
-  </div>
-  <div class="feature">
-    <div class="icon" style="background:rgba(87,242,135,0.2); color:var(--green);">👥</div>
-    <h3>Members &amp; admins</h3>
-    <div class="ar">الأعضاء والأدمنية</div>
-    <p>Full member list with display names, nicks, join dates, role assignments, and admin flags.</p>
-  </div>
-  <div class="feature">
-    <div class="icon" style="background:rgba(163,113,247,0.2); color:#a371f7;">🎭</div>
-    <h3>Roles &amp; permissions</h3>
-    <div class="ar">الرولات والصلاحيات</div>
-    <p>Every role with its permissions bitfield, color, hoist, mentionable flag, and assigned members.</p>
-  </div>
-  <div class="feature">
-    <div class="icon" style="background:rgba(236,84,178,0.2); color:var(--pink);">⏰</div>
-    <h3>Auto-backups</h3>
-    <div class="ar">نسخ تلقائي</div>
-    <p>Schedule <code>/schedule 24</code> and BackUp Bot runs an incremental snapshot every N hours, automatically.</p>
+<!-- ─── PREVIEW CARD ─── -->
+<section class="preview">
+  <div class="preview-card">
+    <div class="preview-head">
+      <div class="preview-icon">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+          <path d="M5 7v12a2 2 0 002 2h10a2 2 0 002-2V7l-3-3H8L5 7z" stroke="currentColor" stroke-width="2.2"/>
+          <path d="M9 4v4h6V4" stroke="currentColor" stroke-width="2.2"/>
+          <rect x="9" y="13" width="6" height="5" fill="currentColor"/>
+        </svg>
+      </div>
+      <div>
+        <div class="preview-title">Backup complete — Khaled's Community</div>
+        <div style="color:#9aa6d4; font-family:Inter,sans-serif; font-size:13px; margin-top:4px;">84 of 84 channels archived</div>
+      </div>
+    </div>
+    <div class="preview-row">
+      <div class="stat gold">
+        <div class="stat-label">Messages</div>
+        <div class="stat-value">152,847</div>
+      </div>
+      <div class="stat red">
+        <div class="stat-label">Attachments</div>
+        <div class="stat-value">12,309</div>
+      </div>
+      <div class="stat green">
+        <div class="stat-label">Downloaded</div>
+        <div class="stat-value">4.2 GB</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Elapsed</div>
+        <div class="stat-value">8 m 12 s</div>
+      </div>
+    </div>
   </div>
 </section>
 
-<section class="cmds">
-  <h2>Slash commands</h2>
-  <p>أوامر بسيطة — تشتغل من أوّل تثبيت</p>
-  <div class="cmd-list">
-    <div class="cmd" style="--accent:var(--blurple);">
-      <code>/backup</code><small>نسخة كاملة للسيرفر / full server backup</small></div>
-    <div class="cmd" style="--accent:var(--gold);">
-      <code>/backup_channel</code><small>روم واحد فقط / one channel</small></div>
-    <div class="cmd" style="--accent:var(--green);">
-      <code>/status</code><small>معلومات آخر نسخة / last backup info</small></div>
-    <div class="cmd" style="--accent:var(--red);">
-      <code>/download</code><small>حمّل .zip / fetch the archive</small></div>
-    <div class="cmd" style="--accent:#a371f7;">
-      <code>/schedule</code><small>نسخ كل N ساعة / auto every N h</small></div>
-    <div class="cmd" style="--accent:var(--pink);">
-      <code>/search</code><small>ابحث في الرسائل / search archive</small></div>
+<!-- ─── FEATURES ─── -->
+<section class="features" id="features">
+  <div class="section-head">
+    <h2>كل شي محفوظ — لا شي يضيع</h2>
+    <p>Every part of your server is captured · everything is yours, on disk</p>
+  </div>
+
+  <div class="feature-grid">
+
+    <div class="feature">
+      <div class="feature-icon b">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </div>
+      <h3>كل الرومات</h3>
+      <div class="en">Every channel</div>
+      <p>كل التيكست والفويس والثريد، مع الصلاحيات والكاتيقوريات وإعدادات السلو-مود.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-icon y">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M21 12a8 8 0 01-12.65 6.5L4 20l1.5-4.35A8 8 0 1121 12z" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </div>
+      <h3>كل رسالة</h3>
+      <div class="en">Every message</div>
+      <p>النص، الإمبيد، الريأكشن، الذكر، الردود، التعديلات والوقت — ابحث فيها متى ما تبي.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-icon r">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
+          <circle cx="9" cy="10" r="1.5" fill="currentColor"/>
+          <path d="M3 17l6-5 5 4 4-3 3 2" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h3>الصور والمرفقات</h3>
+      <div class="en">Images &amp; attachments</div>
+      <p>كل صورة وكل ملف يتم تحميله للتخزين قبل أن تنتهي روابط CDN — صورك تبقى عندك.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-icon g">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle cx="9" cy="8" r="3.5" stroke="currentColor" stroke-width="2"/>
+          <circle cx="17" cy="10" r="2.5" stroke="currentColor" stroke-width="2"/>
+          <path d="M2 20c.5-3 3-5 7-5s6.5 2 7 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M14 18c.5-2 2-3.5 4-3.5s3.5 1 4 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h3>الأعضاء والأدمنية</h3>
+      <div class="en">Members &amp; admins</div>
+      <p>قائمة كاملة بكل عضو: الأسماء، النِك، تاريخ الدخول، الرولات، وعلامة الأدمن.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-icon p">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M5 17l2-9 5 4 5-4 2 9H5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+          <circle cx="7" cy="6" r="1.5" fill="currentColor"/>
+          <circle cx="12" cy="4" r="1.5" fill="currentColor"/>
+          <circle cx="17" cy="6" r="1.5" fill="currentColor"/>
+        </svg>
+      </div>
+      <h3>الرولات والصلاحيات</h3>
+      <div class="en">Roles &amp; permissions</div>
+      <p>كل رول مع صلاحياته الكاملة، اللون، الترتيب، والأعضاء المنتمين له.</p>
+    </div>
+
+    <div class="feature">
+      <div class="feature-icon pk">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+          <path d="M12 7v5l3.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h3>نسخ تلقائي</h3>
+      <div class="en">Auto-backups</div>
+      <p>استخدم <code style="background:#ecf0fe;padding:2px 7px;border-radius:6px;font-family:Inter,monospace;color:#5865f2;font-weight:800;">/schedule 24</code> — يأخذ نسخة كل 24 ساعة تلقائياً، بدون تدخل.</p>
+    </div>
+
   </div>
 </section>
 
+<!-- ─── COMMANDS ─── -->
+<div class="cmds-wrap">
+<section class="cmds" id="commands">
+  <div class="section-head">
+    <h2>الأوامر</h2>
+    <p>7 سلاش كوماند — كل الأوامر تحتاج صلاحية Manage Server</p>
+  </div>
+  <div class="cmd-grid">
+    <div class="cmd">
+      <div class="cmd-icon">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m-5-5l5 5 5-5M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <code>/backup</code>
+        <small>نسخة كاملة للسيرفر</small>
+      </div>
+    </div>
+    <div class="cmd" style="border-right-color:var(--gold);">
+      <div class="cmd-icon" style="background:#fefce8;color:var(--gold);">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
+      <div>
+        <code>/backup_channel</code>
+        <small>روم واحد فقط</small>
+      </div>
+    </div>
+    <div class="cmd" style="border-right-color:var(--green);">
+      <div class="cmd-icon" style="background:#ecfdf5;color:var(--green);">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 13h4l3-7 4 14 3-7h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <code>/status</code>
+        <small>معلومات آخر نسخة</small>
+      </div>
+    </div>
+    <div class="cmd" style="border-right-color:var(--red);">
+      <div class="cmd-icon" style="background:#fef2f2;color:var(--red);">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m-5-5l5 5 5-5M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <code>/download</code>
+        <small>حمّل آخر .zip</small>
+      </div>
+    </div>
+    <div class="cmd" style="border-right-color:#7c3aed;">
+      <div class="cmd-icon p">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <code>/schedule</code>
+        <small>نسخ تلقائي كل N ساعة</small>
+      </div>
+    </div>
+    <div class="cmd" style="border-right-color:#db2777;">
+      <div class="cmd-icon pk">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <code>/search</code>
+        <small>ابحث في الرسائل</small>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- ─── CTA ─── -->
+<div class="cta-wrap">
 <section class="cta">
-  <h2>Self-host it free</h2>
-  <p>Python + Discord.py + SQLite + Railway volume. One file deploy.</p>
+  <h2>احم سيرفرك الحين</h2>
+  <p>تشغيل ذاتي مجاني · يشتغل على Railway مع volume للحفظ الدائم</p>
   <div class="btnrow">
-    <a class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">⭐ View on GitHub</a>
-    <a class="btn btn-ghost" href="https://railway.app">🚂 Deploy to Railway</a>
+    <a class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">
+      ⭐ GitHub
+    </a>
+    <a class="btn btn-ghost" href="https://railway.app">
+      🚂 Deploy to Railway
+    </a>
   </div>
 </section>
+</div>
 
+<!-- ─── FOOTER ─── -->
 <footer>
-  <div>BackUp Bot — Discord server archival, made for Arabic servers, works for everyone.</div>
-  <a class="credit" href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">Programmed By: @KhaledQ84Ever</a>
+  <div>BackUp Bot — حماية كاملة لسيرفر ديسكورد · <a href="https://github.com/khaledq84ever/discord-music-bot">Music Bot</a> · <a href="https://github.com/khaledq84ever/discord-ai-bot">AI Chat Bot</a></div>
+  <br>
+  <a class="credit" href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+    Programmed By @KhaledQ84Ever
+  </a>
 </footer>
 
 </body>
