@@ -29,7 +29,7 @@ log = logging.getLogger("restore")
 # How many messages per channel to replay (0 = all). Webhook sends are slow and
 # rate-limited, so a huge server (100k+ msgs) would take many hours — cap by default.
 MSG_LIMIT = int(os.getenv("RESTORE_MSG_LIMIT", "300"))
-SEND_DELAY = float(os.getenv("RESTORE_SEND_DELAY", "0.45"))  # seconds between sends
+SEND_DELAY = float(os.getenv("RESTORE_SEND_DELAY", "0.15"))  # 0 = fastest (discord.py self-throttles)
 
 _TEXT_TYPES = ("text", "news")
 _VOICE_TYPES = ("voice", "stage_voice")
@@ -84,11 +84,15 @@ async def restore(source_gid: int, guild: discord.Guild, *,
         # ---- 1. Roles (low position first; skip @everyone + managed/bot roles) ----
         p.stage = "roles"; tick()
         role_map: dict[int, discord.Role] = {}
+        existing_roles = {r.name: r for r in guild.roles}
         everyone = next((r for r in roles if r["name"] == "@everyone"), None)
         if everyone:
             role_map[everyone["id"]] = guild.default_role
         for r in sorted(roles, key=lambda x: x.get("position", 0)):
             if r["name"] == "@everyone" or r.get("managed"):
+                continue
+            if r["name"] in existing_roles:           # already restored — reuse & skip
+                role_map[r["id"]] = existing_roles[r["name"]]
                 continue
             try:
                 nr = await guild.create_role(
@@ -97,29 +101,39 @@ async def restore(source_gid: int, guild: discord.Guild, *,
                     permissions=discord.Permissions(r.get("permissions", 0)),
                     reason="BackUp Bot restore")
                 role_map[r["id"]] = nr
+                existing_roles[r["name"]] = nr
                 p.roles += 1; tick()
-                await asyncio.sleep(0.2)
             except discord.HTTPException as e:
                 log.warning("role %s failed: %s", r.get("name"), e)
 
         # ---- 2. Categories, then channels under them ----
         p.stage = "channels"; tick()
         cat_map: dict[int, discord.CategoryChannel] = {}
+        existing_cats = {c.name: c for c in guild.categories}
         for c in sorted([c for c in channels if "categor" in c["type"]],
                         key=lambda x: x.get("position", 0)):
+            if c["name"] in existing_cats:            # already there — reuse & skip
+                cat_map[c["id"]] = existing_cats[c["name"]]
+                continue
             try:
                 nc = await guild.create_category(
                     c["name"], overwrites=_overwrites(c, role_map, guild),
                     reason="BackUp Bot restore")
                 cat_map[c["id"]] = nc
+                existing_cats[c["name"]] = nc
                 p.categories += 1; tick()
-                await asyncio.sleep(0.2)
             except discord.HTTPException as e:
                 log.warning("category %s failed: %s", c.get("name"), e)
 
         chan_map: dict[int, discord.abc.GuildChannel] = {}
+        created_channel_ids: set = set()             # only NEW channels get message replay
+        existing_chans = {c.name: c for c in guild.channels
+                          if not isinstance(c, discord.CategoryChannel)}
         for c in sorted([c for c in channels if "categor" not in c["type"]],
                         key=lambda x: x.get("position", 0)):
+            if c["name"] in existing_chans:           # already restored — reuse, skip replay
+                chan_map[c["id"]] = existing_chans[c["name"]]
+                continue
             parent = cat_map.get(c.get("category_id"))
             ow = _overwrites(c, role_map, guild)
             ctype = c["type"]
@@ -139,16 +153,18 @@ async def restore(source_gid: int, guild: discord.Guild, *,
                         slowmode_delay=int(c.get("slowmode_delay", 0)),
                         reason="BackUp Bot restore")
                 chan_map[c["id"]] = nc
+                created_channel_ids.add(c["id"])
+                existing_chans[c["name"]] = nc
                 p.channels += 1; tick()
-                await asyncio.sleep(0.25)
             except discord.HTTPException as e:
                 log.warning("channel %s failed: %s", c.get("name"), e)
 
         # ---- 3. Emojis (best-effort: fetch saved URL, re-upload) ----
         p.stage = "emojis"; tick()
+        existing_emoji = {em.name for em in guild.emojis}
         for e in emojis:
             url = e.get("url")
-            if not url:
+            if not url or e["name"] in existing_emoji:   # already there — skip
                 continue
             try:
                 async with config_session() as sess:
@@ -158,25 +174,27 @@ async def restore(source_gid: int, guild: discord.Guild, *,
                         img = await resp.read()
                 await guild.create_custom_emoji(name=e["name"], image=img,
                                                  reason="BackUp Bot restore")
+                existing_emoji.add(e["name"])
                 p.emojis += 1; tick()
-                await asyncio.sleep(0.3)
             except discord.HTTPException as e2:
                 log.warning("emoji %s failed: %s", e.get("name"), e2)
             except Exception:
                 pass
 
-        # ---- 4. Messages via webhooks ----
-        if with_messages and chan_map:
+        # ---- 4. Messages via webhooks — ONLY into newly-created channels ----
+        # (re-restore skips channels that already exist → no duplicates, much faster)
+        if with_messages and created_channel_ids:
             p.stage = "messages"; tick()
             conn = storage.open_db(source_gid)
-            for old_cid, new_ch in chan_map.items():
+            limit_sql = f"LIMIT {MSG_LIMIT}" if MSG_LIMIT > 0 else ""
+            for old_cid in created_channel_ids:
+                new_ch = chan_map.get(old_cid)
                 if not isinstance(new_ch, discord.TextChannel):
                     continue
                 try:
                     wh = await new_ch.create_webhook(name="BackUp Restore")
                 except discord.HTTPException:
                     continue
-                limit_sql = f"LIMIT {MSG_LIMIT}" if MSG_LIMIT > 0 else ""
                 rows = conn.execute(
                     f"""SELECT id, author_name, author_id, content, embeds_json
                         FROM messages WHERE channel_id = ?
@@ -195,11 +213,12 @@ async def restore(source_gid: int, guild: discord.Guild, *,
                             files=files, embeds=embeds[:10],
                             allowed_mentions=discord.AllowedMentions.none())
                         p.messages += 1
-                        if p.messages % 10 == 0:
+                        if p.messages % 20 == 0:
                             tick()
                     except discord.HTTPException as e:
                         log.warning("msg replay failed: %s", e)
-                    await asyncio.sleep(SEND_DELAY)
+                    if SEND_DELAY:               # 0 = max speed (discord.py self-throttles)
+                        await asyncio.sleep(SEND_DELAY)
                 try:
                     await wh.delete()
                 except discord.HTTPException:
@@ -257,6 +276,21 @@ def config_session():
     return aiohttp.ClientSession()
 
 
+def _extract_zip(zpath: str, dest: str, base: str) -> None:
+    """Synchronous zip extraction (run via asyncio.to_thread, with zip-slip guard)."""
+    with zipfile.ZipFile(zpath) as z:
+        for member in z.namelist():
+            tgt = os.path.normpath(os.path.join(dest, member))
+            if tgt != base and not tgt.startswith(base + os.sep):
+                continue  # zip-slip guard
+            if member.endswith("/"):
+                os.makedirs(tgt, exist_ok=True)
+                continue
+            os.makedirs(os.path.dirname(tgt), exist_ok=True)
+            with z.open(member) as src, open(tgt, "wb") as out:
+                shutil.copyfileobj(src, out)
+
+
 async def restore_from_zip(url: str, guild: discord.Guild, *,
                            with_messages: bool,
                            progress: Callable[["RProgress"], None] = None,
@@ -293,17 +327,9 @@ async def restore_from_zip(url: str, guild: discord.Guild, *,
         p.stage = "extracting"
         if progress:
             progress(p)
-        with zipfile.ZipFile(zpath) as z:
-            for member in z.namelist():
-                tgt = os.path.normpath(os.path.join(dest, member))
-                if tgt != base and not tgt.startswith(base + os.sep):
-                    continue  # zip-slip guard
-                if member.endswith("/"):
-                    os.makedirs(tgt, exist_ok=True)
-                    continue
-                os.makedirs(os.path.dirname(tgt), exist_ok=True)
-                with z.open(member) as src, open(tgt, "wb") as out:
-                    shutil.copyfileobj(src, out)
+        # Extracting a ~1GB zip is heavy + synchronous — run it OFF the event loop
+        # so the bot doesn't freeze / drop its heartbeat during a restore.
+        await asyncio.to_thread(_extract_zip, zpath, dest, base)
 
         if not storage.read_json(temp_gid, "channels.json"):
             p.error = "that .zip isn't a valid backup (no channels.json inside)"
@@ -326,4 +352,5 @@ async def restore_from_zip(url: str, guild: discord.Guild, *,
             os.remove(zpath)
         except OSError:
             pass
-        shutil.rmtree(dest, ignore_errors=True)
+        # Deleting a ~1GB extracted folder can block too — do it off the loop.
+        await asyncio.to_thread(shutil.rmtree, dest, True)
