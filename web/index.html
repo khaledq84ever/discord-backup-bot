@@ -4,169 +4,225 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BackUp Bot — احفظ سيرفر ديسكورد كامل للأبد</title>
-<meta name="description" content="بوت نسخ احتياطي كامل لسيرفرات ديسكورد. يحفظ كل الرسائل، الرومات، الرولات، الأعضاء، الصور والمرفقات. حماية من الحذف.">
+<meta name="description" content="بوت نسخ احتياطي كامل لسيرفر ديسكورد. يحفظ كل الرسائل، الرومات، الرولات، الأعضاء، الصور والمرفقات. حماية من الحذف.">
 <meta property="og:title" content="BackUp Bot — نسخة احتياطية كاملة لديسكورد">
-<meta property="og:description" content="احفظ سيرفرك من الحذف: رسائل، صور، أعضاء، رولات، رومز — كل شي للأبد.">
-<meta property="og:image" content="/preview.png">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235865F2'/%3E%3Cpath d='M32 14L48 21V32C48 41 41 48 32 50C23 48 16 41 16 32V21L32 14Z' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Cpath d='M24 32L29 37L40 25' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta property="og:description" content="احفظ سيرفرك من الحذف — رسائل، صور، أعضاء، رولات، رومز.">
+<meta property="og:image" content="/family.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="/logo.png">
+<link rel="apple-touch-icon" href="/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #ffffff;
-    --bg-alt: #f6f7fb;
+    --bg-alt: #f7f8fc;
     --ink: #0a0a0a;
+    --ink-soft: #1f2330;
     --muted: #525866;
-    --line: #e4e7ee;
-    --line-strong: #cdd2dd;
+    --line: #e6e9f2;
+    --line-strong: #c9cfe0;
     --blurple: #5865f2;
     --blurple-dark: #4452d4;
     --gold: #d4a843;
     --red: #e8001c;
     --green: #1f9d55;
+    --shadow-sm: 0 2px 6px rgba(20,22,40,0.06);
+    --shadow-md: 0 12px 28px -8px rgba(20,22,40,0.12);
+    --shadow-lg: 0 24px 60px -20px rgba(20,22,40,0.22);
+    --glow-blurple: 0 12px 36px -6px rgba(88,101,242,0.55);
   }
-  html { background: var(--bg); color: var(--ink); }
+  html { background: var(--bg); color: var(--ink); -webkit-text-size-adjust: 100%; }
   body {
-    font-family: 'Cairo', 'Tajawal', 'Inter', system-ui, -apple-system, sans-serif;
-    line-height: 1.6;
+    font-family: 'Cairo', 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 16px;
   }
-  body[dir="rtl"] { letter-spacing: 0; }
 
-  /* ---------- nav ---------- */
+  /* ───── NAV ───── */
   .nav {
     position: sticky; top: 0; z-index: 50;
-    backdrop-filter: blur(12px); background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(14px);
+    background: rgba(255,255,255,0.86);
     border-bottom: 1px solid var(--line);
   }
   .nav-inner {
-    max-width: 1180px; margin: 0 auto; padding: 16px 22px;
+    max-width: 1180px; margin: 0 auto; padding: 14px 22px;
     display: flex; align-items: center; gap: 18px; justify-content: space-between;
   }
   .brand {
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: center; gap: 11px;
     color: var(--ink); text-decoration: none;
-    font-family: 'Inter', sans-serif; font-weight: 900; font-size: 20px;
+    font-weight: 900; font-size: 18px; letter-spacing: -0.3px;
   }
-  .brand-icon {
-    width: 40px; height: 40px; border-radius: 11px;
-    background: var(--blurple); display: grid; place-items: center;
-    box-shadow: 0 4px 14px rgba(88,101,242,0.25);
-  }
-  .brand-icon svg { width: 24px; height: 24px; }
-  .brand .name { font-weight: 900; letter-spacing: -0.3px; }
-
+  .brand img { width: 38px; height: 38px; border-radius: 10px;
+               box-shadow: var(--shadow-sm); }
   .nav-links { display: flex; gap: 26px; }
-  .nav-links a { color: var(--ink); text-decoration: none; font-weight: 700; font-size: 15px; }
+  .nav-links a { color: var(--ink-soft); text-decoration: none;
+                  font-weight: 700; font-size: 14.5px; transition: color .15s; }
   .nav-links a:hover { color: var(--blurple); }
 
-  /* ---------- buttons ---------- */
+  /* ───── BUTTONS ───── */
   .btn {
-    display: inline-flex; align-items: center; gap: 10px;
-    padding: 13px 22px; border-radius: 12px;
-    font-weight: 800; font-size: 16px; text-decoration: none;
-    transition: transform .15s, box-shadow .15s;
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 12px 22px; border-radius: 12px;
+    font-weight: 800; font-size: 15px; text-decoration: none;
     font-family: inherit;
+    position: relative; overflow: hidden;
+    transition: transform .18s cubic-bezier(.2,.6,.2,1),
+                box-shadow .25s cubic-bezier(.2,.6,.2,1),
+                background .15s, border-color .15s;
   }
-  .btn:hover { transform: translateY(-2px); }
-  .btn svg { width: 20px; height: 20px; }
+  .btn:active { transform: translateY(0) scale(.985); }
+  .btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
   .btn-primary {
     background: var(--blurple); color: #fff;
-    box-shadow: 0 6px 20px rgba(88,101,242,0.32);
+    box-shadow: var(--shadow-md), 0 0 0 0 rgba(88,101,242,0);
   }
   .btn-primary:hover { background: var(--blurple-dark);
-                       box-shadow: 0 12px 28px rgba(88,101,242,0.42); }
+                       transform: translateY(-2px);
+                       box-shadow: var(--glow-blurple); }
+  .btn-primary::after {  /* shimmer sweep on hover */
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.18) 50%, transparent 100%);
+    transform: translateX(-100%); transition: transform .55s ease;
+  }
+  .btn-primary:hover::after { transform: translateX(100%); }
+
   .btn-ghost {
     background: #fff; color: var(--ink);
-    border: 2px solid var(--line-strong);
+    border: 1.5px solid var(--line-strong);
   }
-  .btn-ghost:hover { border-color: var(--ink); }
+  .btn-ghost:hover {
+    transform: translateY(-2px);
+    border-color: var(--ink);
+    box-shadow: var(--shadow-md);
+  }
 
-  /* ---------- hero ---------- */
-  .hero { padding: 80px 22px 50px; max-width: 1180px; margin: 0 auto; text-align: center; }
+  .btn-pulse { animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: var(--shadow-md), 0 0 0 0 rgba(88,101,242,0.55); }
+    50%      { box-shadow: var(--shadow-md), 0 0 0 14px rgba(88,101,242,0); }
+  }
+
+  /* ───── HERO ───── */
+  .hero {
+    max-width: 1180px; margin: 0 auto;
+    padding: 70px 22px 30px; text-align: center;
+  }
+  .hero-logo {
+    width: 96px; height: 96px; border-radius: 22px;
+    margin: 0 auto 22px; display: block;
+    box-shadow: 0 16px 40px -10px rgba(88,101,242,0.4);
+    animation: float 4.5s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-8px); }
+  }
   .pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 7px 16px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 14px; border-radius: 999px;
     background: #ecfdf5; color: var(--green);
-    font-weight: 800; font-size: 13px; margin-bottom: 24px;
+    font-weight: 800; font-size: 13px; margin-bottom: 18px;
     font-family: 'Inter', sans-serif;
     border: 1px solid #a7f3d0;
+    letter-spacing: 0.3px;
   }
-  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%;
+               background: var(--green); animation: blink 1.6s ease-in-out infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
   h1 {
     color: var(--ink); font-weight: 900;
-    font-size: clamp(40px, 7vw, 88px);
-    line-height: 1.08; letter-spacing: -1.5px;
-    margin-bottom: 18px;
+    font-size: clamp(36px, 6vw, 72px);
+    line-height: 1.06; letter-spacing: -1.5px; margin-bottom: 14px;
   }
   h1 .accent { color: var(--blurple); }
   .hero-sub {
-    color: var(--muted); font-size: clamp(18px, 2.4vw, 22px);
-    font-weight: 600; max-width: 720px; margin: 0 auto 12px;
+    color: var(--ink-soft); font-size: clamp(16px, 2vw, 19px);
+    font-weight: 700; max-width: 660px; margin: 0 auto 8px;
   }
   .hero-en {
-    color: var(--muted); font-size: clamp(15px, 1.7vw, 17px);
+    color: var(--muted); font-size: clamp(13px, 1.5vw, 15px);
     font-family: 'Inter', sans-serif; font-weight: 500;
-    max-width: 720px; margin: 0 auto 36px;
+    max-width: 660px; margin: 0 auto 32px;
   }
-  .btnrow { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .btnrow { display: flex; gap: 12px; justify-content: center;
+            flex-wrap: wrap; margin-bottom: 16px; }
+  .trust {
+    display: flex; gap: 22px; justify-content: center;
+    flex-wrap: wrap; margin-top: 28px;
+    color: var(--muted); font-family: 'Inter', sans-serif;
+    font-size: 13px; font-weight: 600;
+  }
+  .trust span { display: inline-flex; align-items: center; gap: 6px; }
+  .trust svg { width: 16px; height: 16px; }
 
-  /* ---------- preview card ---------- */
+  /* ───── PREVIEW STATS CARD ───── */
   .preview {
-    max-width: 980px; margin: 60px auto 0; padding: 0 22px;
+    max-width: 980px; margin: 50px auto 0; padding: 0 22px;
   }
   .preview-card {
-    background: #1a1c2a; color: #fff;
-    border-radius: 22px; padding: 38px;
+    background: #161825; color: #fff;
+    border-radius: 22px; padding: 30px;
     box-shadow: 0 30px 70px -20px rgba(20,22,40,0.4);
   }
-  .preview-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .preview-head { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
   .preview-icon {
-    width: 50px; height: 50px; border-radius: 13px;
+    width: 44px; height: 44px; border-radius: 11px;
     background: #57f287; display: grid; place-items: center;
     color: #0a0a0a;
   }
-  .preview-title { font-family: 'Inter', sans-serif; font-weight: 800; font-size: 24px; }
-  .preview-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; }
+  .preview-icon svg { width: 22px; height: 22px; }
+  .preview-title { font-family: 'Inter', sans-serif; font-weight: 800; font-size: 19px; }
+  .preview-sub { color: #9aa6d4; font-family: 'Inter', sans-serif;
+                 font-size: 13px; margin-top: 2px; }
+  .preview-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
   .stat {
-    flex: 1 1 200px;
-    background: #232636; border-radius: 14px; padding: 18px;
-    border-top: 3px solid var(--blurple);
-    font-family: 'Inter', sans-serif;
+    background: #1f2233; border-radius: 11px; padding: 14px 16px;
+    border-top: 3px solid var(--blurple); font-family: 'Inter', sans-serif;
   }
   .stat.gold  { border-top-color: var(--gold); }
   .stat.red   { border-top-color: var(--red); }
   .stat.green { border-top-color: var(--green); }
-  .stat-label { color: #9aa6d4; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
-  .stat-value { font-size: 28px; font-weight: 800; }
+  .stat-label { color: #9aa6d4; font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .stat-value { font-size: 22px; font-weight: 900; line-height: 1.1; }
 
-  /* ---------- section ---------- */
-  section.features { padding: 90px 22px; max-width: 1180px; margin: 0 auto; }
-  .section-head { text-align: center; margin-bottom: 50px; }
+  /* ───── FEATURES ───── */
+  section.features { padding: 80px 22px 50px; max-width: 1180px; margin: 0 auto; }
+  .section-head { text-align: center; margin-bottom: 42px; }
   .section-head h2 {
     color: var(--ink); font-weight: 900;
-    font-size: clamp(32px, 5vw, 52px); letter-spacing: -1px; margin-bottom: 10px;
+    font-size: clamp(28px, 4.5vw, 44px); letter-spacing: -1px; margin-bottom: 8px;
   }
-  .section-head p { color: var(--muted); font-size: 17px; font-weight: 600; }
-
+  .section-head p {
+    color: var(--muted); font-size: 15px; font-weight: 600;
+    font-family: 'Inter', sans-serif;
+  }
   .feature-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 18px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
   }
   .feature {
-    background: var(--bg-alt); border: 1px solid var(--line);
-    padding: 30px 26px; border-radius: 18px;
-    transition: transform .15s, border-color .15s, box-shadow .15s;
+    background: #fff; border: 1px solid var(--line);
+    padding: 26px 22px; border-radius: 16px;
+    transition: transform .2s cubic-bezier(.2,.6,.2,1),
+                border-color .2s, box-shadow .2s;
   }
   .feature:hover {
-    transform: translateY(-3px); border-color: var(--blurple);
-    box-shadow: 0 16px 40px -20px rgba(88,101,242,0.4);
+    transform: translateY(-4px);
+    border-color: var(--blurple);
+    box-shadow: var(--shadow-md);
   }
   .feature-icon {
-    width: 52px; height: 52px; border-radius: 13px;
-    display: grid; place-items: center; margin-bottom: 18px;
+    width: 46px; height: 46px; border-radius: 12px;
+    display: grid; place-items: center; margin-bottom: 14px;
   }
   .feature-icon.b { background: #ecf0fe; color: var(--blurple); }
   .feature-icon.g { background: #ecfdf5; color: var(--green); }
@@ -174,76 +230,105 @@
   .feature-icon.y { background: #fefce8; color: var(--gold); }
   .feature-icon.p { background: #f5f3ff; color: #7c3aed; }
   .feature-icon.pk { background: #fdf2f8; color: #db2777; }
-  .feature-icon svg { width: 28px; height: 28px; }
-  .feature h3 { color: var(--ink); font-weight: 900; font-size: 22px; margin-bottom: 4px; }
-  .feature .en { color: var(--muted); font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px; margin-bottom: 12px; }
-  .feature p { color: var(--muted); font-size: 15px; font-weight: 500; }
+  .feature-icon svg { width: 24px; height: 24px; }
+  .feature h3 { color: var(--ink); font-weight: 900;
+                font-size: 18px; margin-bottom: 4px; }
+  .feature .en {
+    color: var(--muted); font-family: 'Inter', sans-serif;
+    font-weight: 600; font-size: 13px; margin-bottom: 10px;
+    letter-spacing: 0.2px; text-transform: uppercase;
+  }
+  .feature p { color: var(--ink-soft); font-size: 14.5px; font-weight: 500; }
 
-  /* ---------- commands ---------- */
-  section.cmds { padding: 90px 22px; max-width: 1180px; margin: 0 auto; background: var(--bg-alt); }
-  .cmds-wrap { background: var(--bg-alt); }
+  /* ───── COMMANDS ───── */
+  .cmds-wrap { background: var(--bg-alt); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  section.cmds { padding: 80px 22px 70px; max-width: 1180px; margin: 0 auto; }
   .cmd-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 12px;
   }
   .cmd {
-    background: #fff; border: 1px solid var(--line); padding: 22px;
-    border-radius: 14px; border-right: 5px solid var(--blurple);
-    display: flex; align-items: center; gap: 16px;
+    background: #fff; border: 1px solid var(--line); padding: 18px 20px;
+    border-radius: 14px; border-right: 4px solid var(--accent, var(--blurple));
+    display: flex; align-items: center; gap: 14px;
+    transition: transform .18s, box-shadow .18s, border-color .18s;
+  }
+  .cmd:hover {
+    transform: translateX(-3px);
+    box-shadow: var(--shadow-md);
   }
   .cmd-icon {
-    width: 44px; height: 44px; border-radius: 11px;
-    background: #ecf0fe; color: var(--blurple);
+    width: 40px; height: 40px; border-radius: 10px;
+    background: var(--accent-soft, #ecf0fe);
+    color: var(--accent, var(--blurple));
     display: grid; place-items: center; flex-shrink: 0;
   }
-  .cmd-icon svg { width: 22px; height: 22px; }
+  .cmd-icon svg { width: 20px; height: 20px; }
   .cmd code {
-    font-family: 'Inter', monospace; color: var(--ink); font-weight: 800;
-    font-size: 16px; display: block; margin-bottom: 3px;
+    font-family: 'Inter', 'SF Mono', monospace; color: var(--ink);
+    font-weight: 800; font-size: 14.5px;
+    display: block; margin-bottom: 2px;
     background: none; padding: 0;
   }
-  .cmd small { color: var(--muted); font-size: 14px; font-weight: 600; }
+  .cmd small { color: var(--muted); font-size: 13px; font-weight: 600; }
 
-  /* ---------- cta ---------- */
-  .cta-wrap { padding: 70px 22px 30px; }
+  /* ───── CTA ───── */
+  .cta-wrap { padding: 70px 22px; }
   .cta {
-    max-width: 880px; margin: 0 auto; padding: 56px 28px; text-align: center;
-    background: linear-gradient(135deg, var(--blurple), var(--blurple-dark));
-    border-radius: 28px; color: #fff;
-    box-shadow: 0 24px 60px -20px rgba(88,101,242,0.55);
+    max-width: 860px; margin: 0 auto; padding: 50px 28px; text-align: center;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18) 0%, transparent 50%),
+      linear-gradient(135deg, var(--blurple), var(--blurple-dark));
+    border-radius: 24px; color: #fff;
+    box-shadow: 0 28px 60px -16px rgba(88,101,242,0.55);
   }
-  .cta h2 { color: #fff; font-weight: 900; font-size: clamp(28px, 5vw, 46px); margin-bottom: 12px; letter-spacing: -1px; }
-  .cta p { color: rgba(255,255,255,0.86); font-weight: 600; margin-bottom: 28px; font-size: 17px; }
+  .cta h2 {
+    color: #fff; font-weight: 900;
+    font-size: clamp(26px, 4.5vw, 38px);
+    margin-bottom: 10px; letter-spacing: -0.8px;
+  }
+  .cta p { color: rgba(255,255,255,0.9); font-weight: 600;
+           margin-bottom: 24px; font-size: 15px; }
   .cta .btn-primary { background: #fff; color: var(--blurple); }
   .cta .btn-primary:hover { background: #f0f1ff; }
-  .cta .btn-ghost { background: transparent; border-color: rgba(255,255,255,0.4); color: #fff; }
+  .cta .btn-ghost { background: transparent; border-color: rgba(255,255,255,0.45);
+                     color: #fff; }
   .cta .btn-ghost:hover { border-color: #fff; }
 
-  /* ---------- footer ---------- */
+  /* ───── FOOTER ───── */
   footer {
-    text-align: center; padding: 36px 22px 50px; color: var(--muted);
-    font-size: 14px; font-weight: 600;
+    text-align: center; padding: 30px 22px 40px;
+    color: var(--muted); font-size: 13px; font-weight: 600;
     border-top: 1px solid var(--line);
   }
   footer a { color: var(--blurple); text-decoration: none; font-weight: 800; }
+  .footer-family {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-bottom: 12px;
+  }
+  .footer-family img { width: 32px; height: 32px; border-radius: 8px;
+                        box-shadow: var(--shadow-sm);
+                        transition: transform .2s; }
+  .footer-family img:hover { transform: translateY(-3px) scale(1.06); }
   .credit {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 9px 18px; border-radius: 999px; background: var(--bg-alt);
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 16px; border-radius: 999px; background: var(--bg-alt);
     border: 1px solid var(--line); text-decoration: none; color: var(--ink);
     font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 800;
-    margin-top: 12px;
+    margin-top: 8px; transition: border-color .15s;
   }
+  .credit:hover { border-color: var(--ink); }
+  .credit svg { width: 13px; height: 13px; }
 
-  /* ---------- mobile ---------- */
+  /* ───── MOBILE ───── */
   @media (max-width: 720px) {
     .nav-links { display: none; }
-    .btnrow .btn { width: 100%; justify-content: center; }
-    .hero { padding: 50px 22px 30px; }
-    .preview-card { padding: 24px 18px; }
-    .preview-row { gap: 10px; }
-    .stat { flex-basis: calc(50% - 5px); padding: 14px; }
-    .stat-value { font-size: 22px; }
+    .btnrow .btn { flex: 1 1 auto; justify-content: center; }
+    .hero { padding: 40px 18px 24px; }
+    .preview-row { grid-template-columns: repeat(2, 1fr); }
+    .preview-card { padding: 22px 18px; }
     section.features, section.cmds { padding: 60px 16px; }
+    .cta-wrap { padding: 50px 16px; }
   }
 </style>
 </head>
@@ -253,21 +338,16 @@
 <nav class="nav">
   <div class="nav-inner">
     <a href="/" class="brand">
-      <div class="brand-icon">
-        <svg viewBox="0 0 64 64" fill="none">
-          <path d="M32 8L52 16V32C52 43 44 52 32 56C20 52 12 43 12 32V16L32 8Z" fill="none" stroke="#fff" stroke-width="4"/>
-          <path d="M22 32L29 39L42 24" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      </div>
-      <span class="name">BackUp Bot</span>
+      <img src="/logo.png" alt="BackUp Bot logo">
+      <span>BackUp Bot</span>
     </a>
     <div class="nav-links">
       <a href="#features">المميزات</a>
       <a href="#commands">الأوامر</a>
       <a href="https://github.com/khaledq84ever/discord-backup-bot">GitHub</a>
     </div>
-    <a class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5v14m-7-7h14" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>
+    <a class="btn btn-primary btn-pulse" id="addBtn" href="#" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5v14m-7-7h14" stroke="#fff" stroke-width="2.6" stroke-linecap="round" fill="none"/></svg>
       <span>أضفه لسيرفرك</span>
     </a>
   </div>
@@ -275,36 +355,51 @@
 
 <!-- ─── HERO ─── -->
 <section class="hero">
+  <img class="hero-logo" src="/logo.png" alt="BackUp Bot">
   <div class="pill"><span class="dot"></span> أرشيف 100% لسيرفر ديسكورد</div>
   <h1>احفظ سيرفرك <span class="accent">للأبد</span></h1>
-  <p class="hero-sub">بوت نسخ احتياطي كامل — رسائل، صور، رومز، رولات، أعضاء — كل شي محفوظ، محمي من الحذف.</p>
-  <p class="hero-en">Full Discord server backup — channels, roles, members, messages, embeds, reactions, and every attachment downloaded to disk before CDN URLs expire.</p>
+  <p class="hero-sub">رسائل · صور · رومز · رولات · أعضاء — كل شي محفوظ على القرص ومحمي من الحذف</p>
+  <p class="hero-en">Full Discord server backup — every channel, role, member, message, embed, reaction, and attachment.</p>
   <div class="btnrow">
-    <a class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5v14m-7-7h14" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>
-      أضفه لديسكورد
+    <a class="btn btn-primary" id="addBtn2" href="#" rel="noopener">
+      <!-- Discord glyph -->
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.075.075 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037 19.74 19.74 0 0 0-4.885 1.515.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.029zM8.02 15.331c-1.182 0-2.157-1.086-2.157-2.42 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.956 2.419-2.157 2.419zm7.974 0c-1.18 0-2.157-1.086-2.157-2.42 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.946 2.419-2.157 2.419z"/></svg>
+      <span>أضفه لديسكورد</span>
     </a>
     <a class="btn btn-ghost" href="https://github.com/khaledq84ever/discord-backup-bot">
+      <!-- GitHub octocat -->
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.87 10.91.58.1.78-.25.78-.55v-1.94c-3.2.7-3.87-1.37-3.87-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.04-.71.08-.69.08-.69 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.18a10.93 10.93 0 0 1 5.74 0c2.2-1.49 3.16-1.18 3.16-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.15v3.18c0 .31.21.66.79.55C20.22 21.38 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
-      المصدر على GitHub
+      <span>GitHub</span>
     </a>
+  </div>
+  <div class="trust">
+    <span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      MIT licensed
+    </span>
+    <span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+      Python · discord.py
+    </span>
+    <span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 10h6M9 14h6"/></svg>
+      SQLite + JSON
+    </span>
   </div>
 </section>
 
-<!-- ─── PREVIEW CARD ─── -->
+<!-- ─── PREVIEW STATS CARD ─── -->
 <section class="preview">
   <div class="preview-card">
     <div class="preview-head">
       <div class="preview-icon">
-        <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
-          <path d="M5 7v12a2 2 0 002 2h10a2 2 0 002-2V7l-3-3H8L5 7z" stroke="currentColor" stroke-width="2.2"/>
-          <path d="M9 4v4h6V4" stroke="currentColor" stroke-width="2.2"/>
-          <rect x="9" y="13" width="6" height="5" fill="currentColor"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6L9 17l-5-5"/>
         </svg>
       </div>
       <div>
         <div class="preview-title">Backup complete — Khaled's Community</div>
-        <div style="color:#9aa6d4; font-family:Inter,sans-serif; font-size:13px; margin-top:4px;">84 of 84 channels archived</div>
+        <div class="preview-sub">84 of 84 channels archived · 100%</div>
       </div>
     </div>
     <div class="preview-row">
@@ -322,7 +417,7 @@
       </div>
       <div class="stat">
         <div class="stat-label">Elapsed</div>
-        <div class="stat-value">8 m 12 s</div>
+        <div class="stat-value">8m 12s</div>
       </div>
     </div>
   </div>
@@ -331,68 +426,65 @@
 <!-- ─── FEATURES ─── -->
 <section class="features" id="features">
   <div class="section-head">
-    <h2>كل شي محفوظ — لا شي يضيع</h2>
-    <p>Every part of your server is captured · everything is yours, on disk</p>
+    <h2>كل شي محفوظ · لا شي يضيع</h2>
+    <p>Every part of your server is captured — everything is yours, on disk</p>
   </div>
 
   <div class="feature-grid">
 
     <div class="feature">
       <div class="feature-icon b">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" stroke="currentColor" stroke-width="2"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
       </div>
       <h3>كل الرومات</h3>
       <div class="en">Every channel</div>
-      <p>كل التيكست والفويس والثريد، مع الصلاحيات والكاتيقوريات وإعدادات السلو-مود.</p>
+      <p>تيكست، فويس، ثريد، فوروم — مع كل الصلاحيات والكاتيقوريات وإعدادات السلو-مود.</p>
     </div>
 
     <div class="feature">
       <div class="feature-icon y">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path d="M21 12a8 8 0 01-12.65 6.5L4 20l1.5-4.35A8 8 0 1121 12z" stroke="currentColor" stroke-width="2"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/>
         </svg>
       </div>
       <h3>كل رسالة</h3>
       <div class="en">Every message</div>
-      <p>النص، الإمبيد، الريأكشن، الذكر، الردود، التعديلات والوقت — ابحث فيها متى ما تبي.</p>
+      <p>النص، الإمبيد، الريأكشن، الذكر، الردود، التعديلات، الوقت — وكلها قابلة للبحث.</p>
     </div>
 
     <div class="feature">
       <div class="feature-icon r">
-        <svg viewBox="0 0 24 24" fill="none">
-          <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
-          <circle cx="9" cy="10" r="1.5" fill="currentColor"/>
-          <path d="M3 17l6-5 5 4 4-3 3 2" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
         </svg>
       </div>
       <h3>الصور والمرفقات</h3>
-      <div class="en">Images &amp; attachments</div>
-      <p>كل صورة وكل ملف يتم تحميله للتخزين قبل أن تنتهي روابط CDN — صورك تبقى عندك.</p>
+      <div class="en">Images &amp; files</div>
+      <p>كل صورة وملف يتم تحميله للقرص قبل انتهاء روابط CDN — صورك تبقى عندك.</p>
     </div>
 
     <div class="feature">
       <div class="feature-icon g">
-        <svg viewBox="0 0 24 24" fill="none">
-          <circle cx="9" cy="8" r="3.5" stroke="currentColor" stroke-width="2"/>
-          <circle cx="17" cy="10" r="2.5" stroke="currentColor" stroke-width="2"/>
-          <path d="M2 20c.5-3 3-5 7-5s6.5 2 7 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          <path d="M14 18c.5-2 2-3.5 4-3.5s3.5 1 4 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
         </svg>
       </div>
       <h3>الأعضاء والأدمنية</h3>
       <div class="en">Members &amp; admins</div>
-      <p>قائمة كاملة بكل عضو: الأسماء، النِك، تاريخ الدخول، الرولات، وعلامة الأدمن.</p>
+      <p>قائمة كاملة بكل عضو: الأسماء، النِك، تاريخ الانضمام، الرولات، علامة الأدمن.</p>
     </div>
 
     <div class="feature">
       <div class="feature-icon p">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path d="M5 17l2-9 5 4 5-4 2 9H5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-          <circle cx="7" cy="6" r="1.5" fill="currentColor"/>
-          <circle cx="12" cy="4" r="1.5" fill="currentColor"/>
-          <circle cx="17" cy="6" r="1.5" fill="currentColor"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/>
         </svg>
       </div>
       <h3>الرولات والصلاحيات</h3>
@@ -402,14 +494,14 @@
 
     <div class="feature">
       <div class="feature-icon pk">
-        <svg viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
-          <path d="M12 7v5l3.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
         </svg>
       </div>
       <h3>نسخ تلقائي</h3>
       <div class="en">Auto-backups</div>
-      <p>استخدم <code style="background:#ecf0fe;padding:2px 7px;border-radius:6px;font-family:Inter,monospace;color:#5865f2;font-weight:800;">/schedule 24</code> — يأخذ نسخة كل 24 ساعة تلقائياً، بدون تدخل.</p>
+      <p>استخدم <code style="background:#ecf0fe;padding:2px 7px;border-radius:6px;font-family:Inter,monospace;color:#5865f2;font-weight:800;">/schedule 24</code> — يأخذ نسخة تلقائياً كل N ساعة بدون تدخل.</p>
     </div>
 
   </div>
@@ -420,63 +512,72 @@
 <section class="cmds" id="commands">
   <div class="section-head">
     <h2>الأوامر</h2>
-    <p>7 سلاش كوماند — كل الأوامر تحتاج صلاحية Manage Server</p>
+    <p>7 slash commands · all require Manage Server</p>
   </div>
   <div class="cmd-grid">
-    <div class="cmd">
+
+    <div class="cmd" style="--accent:#5865f2; --accent-soft:#ecf0fe;">
       <div class="cmd-icon">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m-5-5l5 5 5-5M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v12m-5-5l5 5 5-5M5 21h14"/>
+        </svg>
       </div>
       <div>
         <code>/backup</code>
         <small>نسخة كاملة للسيرفر</small>
       </div>
     </div>
-    <div class="cmd" style="border-right-color:var(--gold);">
-      <div class="cmd-icon" style="background:#fefce8;color:var(--gold);">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" stroke="currentColor" stroke-width="2"/></svg>
+
+    <div class="cmd" style="--accent:#d4a843; --accent-soft:#fefce8;">
+      <div class="cmd-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
       </div>
       <div>
         <code>/backup_channel</code>
         <small>روم واحد فقط</small>
       </div>
     </div>
-    <div class="cmd" style="border-right-color:var(--green);">
-      <div class="cmd-icon" style="background:#ecfdf5;color:var(--green);">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M3 13h4l3-7 4 14 3-7h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+
+    <div class="cmd" style="--accent:#1f9d55; --accent-soft:#ecfdf5;">
+      <div class="cmd-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h4l3-7 4 14 3-7h4"/></svg>
       </div>
       <div>
         <code>/status</code>
         <small>معلومات آخر نسخة</small>
       </div>
     </div>
-    <div class="cmd" style="border-right-color:var(--red);">
-      <div class="cmd-icon" style="background:#fef2f2;color:var(--red);">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m-5-5l5 5 5-5M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+
+    <div class="cmd" style="--accent:#e8001c; --accent-soft:#fef2f2;">
+      <div class="cmd-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
       </div>
       <div>
         <code>/download</code>
-        <small>حمّل آخر .zip</small>
+        <small>حمّل آخر نسخة .zip</small>
       </div>
     </div>
-    <div class="cmd" style="border-right-color:#7c3aed;">
-      <div class="cmd-icon p">
-        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+
+    <div class="cmd" style="--accent:#7c3aed; --accent-soft:#f5f3ff;">
+      <div class="cmd-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       </div>
       <div>
         <code>/schedule</code>
         <small>نسخ تلقائي كل N ساعة</small>
       </div>
     </div>
-    <div class="cmd" style="border-right-color:#db2777;">
-      <div class="cmd-icon pk">
-        <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+
+    <div class="cmd" style="--accent:#db2777; --accent-soft:#fdf2f8;">
+      <div class="cmd-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
       </div>
       <div>
         <code>/search</code>
-        <small>ابحث في الرسائل</small>
+        <small>ابحث في الرسائل المحفوظة</small>
       </div>
     </div>
+
   </div>
 </section>
 </div>
@@ -488,10 +589,12 @@
   <p>تشغيل ذاتي مجاني · يشتغل على Railway مع volume للحفظ الدائم</p>
   <div class="btnrow">
     <a class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">
-      ⭐ GitHub
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.87 10.91.58.1.78-.25.78-.55v-1.94c-3.2.7-3.87-1.37-3.87-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.04-.71.08-.69.08-.69 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.18a10.93 10.93 0 0 1 5.74 0c2.2-1.49 3.16-1.18 3.16-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.15v3.18c0 .31.21.66.79.55C20.22 21.38 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
+      Source on GitHub
     </a>
     <a class="btn btn-ghost" href="https://railway.app">
-      🚂 Deploy to Railway
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="11" rx="2"/><path d="M8 6V4h8v2M3 11h18M7 17v3M17 17v3"/></svg>
+      Deploy on Railway
     </a>
   </div>
 </section>
@@ -499,13 +602,35 @@
 
 <!-- ─── FOOTER ─── -->
 <footer>
-  <div>BackUp Bot — حماية كاملة لسيرفر ديسكورد · <a href="https://github.com/khaledq84ever/discord-music-bot">Music Bot</a> · <a href="https://github.com/khaledq84ever/discord-ai-bot">AI Chat Bot</a></div>
+  <div class="footer-family">
+    <a href="https://github.com/khaledq84ever/discord-ai-bot" title="AI Chat Bot"><img src="/logo-ai.png" alt="AI Bot" style="opacity:0.55"></a>
+    <a href="https://github.com/khaledq84ever/discord-music-bot" title="Music Bot"><img src="/logo-music.png" alt="Music Bot" style="opacity:0.55"></a>
+    <a href="https://github.com/khaledq84ever/discord-backup-bot" title="BackUp Bot"><img src="/logo-backup.png" alt="BackUp Bot"></a>
+  </div>
+  <div>BackUp Bot — حماية كاملة لسيرفر ديسكورد</div>
   <br>
   <a class="credit" href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
     Programmed By @KhaledQ84Ever
   </a>
 </footer>
 
+<script>
+  // ── One-click invite. Users NEVER enter a token — they just pick their server. ──
+  // Paste the BackUp Bot's public Application ID here (Developer Portal → General Information).
+  const CLIENT_ID = "";  // TODO: backup bot Application ID
+  // View Channels + Read History + Send + Embed + Attach Files (archival + /download + /status)
+  const PERMISSIONS = "117760";
+  function inviteUrl(){
+    return `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}`
+      + `&permissions=${PERMISSIONS}&scope=bot%20applications.commands`;
+  }
+  document.querySelectorAll('#addBtn,#addBtn2').forEach(btn=>{
+    btn.href = CLIENT_ID ? inviteUrl() : "#";
+    btn.addEventListener("click",(e)=>{
+      if(!CLIENT_ID){ e.preventDefault(); alert("⚠️ افتح web/index.html وحط Application ID في CLIENT_ID."); }
+    });
+  });
+</script>
 </body>
 </html>
