@@ -15,11 +15,13 @@ import asyncio
 import json
 import logging
 import os
+import random
+import shutil
+import zipfile
 from typing import Callable, Optional
 
 import discord
 
-import config
 import storage
 
 log = logging.getLogger("restore")
@@ -231,11 +233,16 @@ def _load_attachments(conn, message_id: int, source_gid: int) -> list:
             (message_id,)).fetchall()
     except Exception:
         return files
+    adir = storage.attachments_dir(source_gid)
     for filename, local_path in rows:
-        path = local_path
-        if path and not os.path.isabs(path):
-            path = os.path.join(storage.guild_dir(source_gid), local_path)
-        if path and os.path.isfile(path) and os.path.getsize(path) < 8 * 1024 * 1024:
+        # Try the stored path, then fall back to <source>/attachments/<basename>
+        # (covers backups restored from a downloaded .zip, where absolute paths differ).
+        candidates = []
+        if local_path:
+            candidates.append(local_path)
+            candidates.append(os.path.join(adir, os.path.basename(local_path)))
+        path = next((c for c in candidates if c and os.path.isfile(c)), None)
+        if path and os.path.getsize(path) < 8 * 1024 * 1024:
             try:
                 files.append(discord.File(path, filename=filename or os.path.basename(path)))
             except Exception:
@@ -248,3 +255,75 @@ def _load_attachments(conn, message_id: int, source_gid: int) -> list:
 def config_session():
     import aiohttp
     return aiohttp.ClientSession()
+
+
+async def restore_from_zip(url: str, guild: discord.Guild, *,
+                           with_messages: bool,
+                           progress: Callable[["RProgress"], None] = None,
+                           ) -> "RProgress":
+    """Download a backup .zip from a URL, extract it, and restore from it.
+
+    Lets the user just paste a download link to /restore — the bot does the rest.
+    """
+    import aiohttp
+
+    p = RProgress()
+    p.stage = "downloading"
+    if progress:
+        progress(p)
+
+    temp_gid = random.randint(10 ** 17, 10 ** 18)   # throwaway source id under DATA_DIR
+    dest = storage.guild_dir(temp_gid)              # creates DATA_DIR/<temp_gid>/
+    base = os.path.normpath(dest)
+    zpath = dest.rstrip("/") + ".zip"
+    try:
+        timeout = aiohttp.ClientTimeout(total=1800)
+        async with aiohttp.ClientSession(timeout=timeout) as sess:
+            async with sess.get(url) as r:
+                if r.status != 200:
+                    p.error = f"download failed: HTTP {r.status}"
+                    p.done = True
+                    if progress:
+                        progress(p)
+                    return p
+                with open(zpath, "wb") as f:
+                    async for chunk in r.content.iter_chunked(1 << 16):
+                        f.write(chunk)
+
+        p.stage = "extracting"
+        if progress:
+            progress(p)
+        with zipfile.ZipFile(zpath) as z:
+            for member in z.namelist():
+                tgt = os.path.normpath(os.path.join(dest, member))
+                if tgt != base and not tgt.startswith(base + os.sep):
+                    continue  # zip-slip guard
+                if member.endswith("/"):
+                    os.makedirs(tgt, exist_ok=True)
+                    continue
+                os.makedirs(os.path.dirname(tgt), exist_ok=True)
+                with z.open(member) as src, open(tgt, "wb") as out:
+                    shutil.copyfileobj(src, out)
+
+        if not storage.read_json(temp_gid, "channels.json"):
+            p.error = "that .zip isn't a valid backup (no channels.json inside)"
+            p.done = True
+            if progress:
+                progress(p)
+            return p
+
+        return await restore(temp_gid, guild, with_messages=with_messages,
+                             progress=progress)
+    except Exception as e:  # noqa: BLE001
+        p.error = str(e)[:300]
+        p.done = True
+        log.exception("restore_from_zip failed")
+        if progress:
+            progress(p)
+        return p
+    finally:
+        try:
+            os.remove(zpath)
+        except OSError:
+            pass
+        shutil.rmtree(dest, ignore_errors=True)

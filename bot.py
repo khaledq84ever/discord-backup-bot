@@ -94,12 +94,21 @@ schedules: dict[int, int] = {}
 # --------------------------------------------------------------------------- #
 @bot.event
 async def on_ready():
-    if config.DEV_GUILD_ID:
-        g = discord.Object(id=int(config.DEV_GUILD_ID))
-        tree.copy_global_to(guild=g)
-        await tree.sync(guild=g)
-        log.info("synced to dev guild %s", config.DEV_GUILD_ID)
-    await tree.sync()
+    # Register slash commands PER-GUILD so they appear instantly (global sync can
+    # take up to ~1h), and clear the global set so nothing shows up duplicated.
+    try:
+        cmds = tree.get_commands()
+        tree.clear_commands(guild=None)
+        await tree.sync()                 # wipe stale global commands on Discord
+        for c in cmds:                    # keep them in-memory for copy_global_to
+            tree.add_command(c)
+        for g in bot.guilds:
+            tree.clear_commands(guild=g)
+            tree.copy_global_to(guild=g)
+            await tree.sync(guild=g)
+        log.info("slash commands synced to %d guild(s)", len(bot.guilds))
+    except Exception as e:                # noqa: BLE001
+        log.warning("command sync issue: %s", e)
     log.info("Logged in as %s — in %d guild(s).", bot.user, len(bot.guilds))
     global _web_started
     if not _web_started:
@@ -109,6 +118,18 @@ async def on_ready():
         for g in bot.guilds:
             schedules[g.id] = config.AUTO_BACKUP_HOURS
         bot.loop.create_task(_auto_loop())
+
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    # Make slash commands appear instantly the moment the bot is added.
+    try:
+        tree.clear_commands(guild=guild)
+        tree.copy_global_to(guild=guild)
+        await tree.sync(guild=guild)
+        log.info("synced commands to new guild %s (%s)", guild.id, guild.name)
+    except Exception as e:  # noqa: BLE001
+        log.warning("guild_join sync failed: %s", e)
 
 
 async def _auto_loop():
@@ -347,21 +368,19 @@ def _restore_embed(p, guild_name: str) -> discord.Embed:
 @tree.command(name="restore",
               description="استعد سيرفر من نسخة / Rebuild a server from a backup")
 @app_commands.describe(
-    source="ID سيرفر النسخة (فاضي = هنا) / backup source guild id (blank = here)",
+    link="رابط ملف .zip للنسخة (الأسهل) / a backup .zip download link (easiest)",
+    source="أو ID سيرفر نسخة محفوظة / OR a saved backup's guild id (blank = here)",
     target="ID السيرفر الوجهة (فاضي = هنا) / target guild id (blank = here)",
     messages="استرجاع الرسائل أيضاً؟ بطيء / replay messages too (slow)")
 async def restore_cmd(interaction: discord.Interaction,
+                      link: Optional[str] = None,
                       source: Optional[str] = None,
                       target: Optional[str] = None,
                       messages: bool = True):
     if not interaction.guild or not _admin_only(interaction):
         return await interaction.response.send_message(
             "⛔ Manage Server required.", ephemeral=True)
-    try:
-        source_gid = int(source) if source else interaction.guild.id
-    except ValueError:
-        return await interaction.response.send_message(
-            "ID غير صحيح / invalid source id.", ephemeral=True)
+    # Resolve the destination server (current, or another the bot is in).
     if target:
         try:
             target_guild = bot.get_guild(int(target))
@@ -373,9 +392,22 @@ async def restore_cmd(interaction: discord.Interaction,
                 "Bot isn't in a server with that ID — add it there first.", ephemeral=True)
     else:
         target_guild = interaction.guild
-    if not storage.read_json(source_gid, "channels.json"):
-        return await interaction.response.send_message(
-            "ماكو نسخة محفوظة لهالسيرفر / no backup found for that source id.", ephemeral=True)
+    # Source: a .zip link (downloaded + extracted) OR a saved backup on disk.
+    source_gid = None
+    if link:
+        if not link.lower().startswith(("http://", "https://")) or ".zip" not in link.lower():
+            return await interaction.response.send_message(
+                "❌ لازم رابط .zip مباشر / link must be a direct .zip URL.", ephemeral=True)
+    else:
+        try:
+            source_gid = int(source) if source else interaction.guild.id
+        except ValueError:
+            return await interaction.response.send_message(
+                "ID غير صحيح / invalid source id.", ephemeral=True)
+        if not storage.read_json(source_gid, "channels.json"):
+            return await interaction.response.send_message(
+                "ماكو نسخة محفوظة لهالـID — أو حط رابط .zip بدالها\n"
+                "no saved backup for that id — or pass a .zip `link` instead.", ephemeral=True)
     me = target_guild.me
     if me is None or not me.guild_permissions.administrator:
         return await interaction.response.send_message(
@@ -384,9 +416,13 @@ async def restore_cmd(interaction: discord.Interaction,
 
     await interaction.response.defer(thinking=True)
     holder: dict = {}
-    task = asyncio.create_task(restore_engine.restore(
-        source_gid, target_guild, with_messages=messages,
-        progress=lambda pp: holder.__setitem__("p", pp)))
+    cb = lambda pp: holder.__setitem__("p", pp)  # noqa: E731
+    if link:
+        task = asyncio.create_task(restore_engine.restore_from_zip(
+            link, target_guild, with_messages=messages, progress=cb))
+    else:
+        task = asyncio.create_task(restore_engine.restore(
+            source_gid, target_guild, with_messages=messages, progress=cb))
     while not task.done():
         await asyncio.sleep(3)
         if "p" in holder:
