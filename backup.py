@@ -263,6 +263,36 @@ TEXTLIKE = (discord.ChannelType.text,
             discord.ChannelType.voice)  # voice channels can have text in newer Discord
 
 
+async def _all_message_channels(guild: discord.Guild) -> list:
+    """Every place that can hold messages: text/news/voice channels PLUS all
+    threads — active and public/private *archived* (often most of an old server).
+    """
+    seen, out = set(), []
+
+    def add(c):
+        if c.id not in seen:
+            seen.add(c.id)
+            out.append(c)
+
+    for c in guild.channels:
+        if c.type in TEXTLIKE:
+            add(c)
+    for t in guild.threads:                      # currently-active threads
+        add(t)
+    # Archived threads must be fetched per parent channel.
+    for c in guild.channels:
+        if c.type not in (discord.ChannelType.text, discord.ChannelType.news,
+                          discord.ChannelType.forum):
+            continue
+        for private in (False, True):
+            try:
+                async for t in c.archived_threads(limit=None, private=private):
+                    add(t)
+            except (discord.Forbidden, discord.HTTPException, AttributeError):
+                pass
+    return out
+
+
 async def run_backup(guild: discord.Guild, progress: Progress,
                      specific_channel: Optional[discord.abc.GuildChannel] = None
                      ) -> dict:
@@ -280,7 +310,7 @@ async def run_backup(guild: discord.Guild, progress: Progress,
     if specific_channel is not None:
         channels = [specific_channel]
     else:
-        channels = [c for c in guild.channels if c.type in TEXTLIKE]
+        channels = await _all_message_channels(guild)
     progress.channels_total = len(channels)
 
     timeout = aiohttp.ClientTimeout(total=120, connect=20)
