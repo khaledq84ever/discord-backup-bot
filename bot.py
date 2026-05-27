@@ -61,6 +61,26 @@ async def _h_health(request):
     return web.Response(text="BackUp Bot — OK")
 
 
+async def _h_latest(request):
+    """Always serve the NEWEST .zip snapshot for a guild — a stable link."""
+    if request.match_info["token"] != DOWNLOAD_SECRET:
+        return web.Response(status=403, text="forbidden")
+    gid = request.match_info["gid"]
+    if not gid.isdigit():
+        return web.Response(status=400, text="bad request")
+    bdir = storage.backups_dir(int(gid))
+    try:
+        zips = [f for f in os.listdir(bdir) if f.endswith(".zip")]
+    except OSError:
+        zips = []
+    if not zips:
+        return web.Response(status=404, text="no backup yet — run /backup first")
+    newest = max(zips, key=lambda f: os.path.getmtime(os.path.join(bdir, f)))
+    return web.FileResponse(
+        os.path.join(bdir, newest),
+        headers={"Content-Disposition": f'attachment; filename="{newest}"'})
+
+
 async def _h_download(request):
     if request.match_info["token"] != DOWNLOAD_SECRET:
         return web.Response(status=403, text="forbidden")
@@ -77,6 +97,7 @@ async def _h_download(request):
 async def _start_webserver():
     app = web.Application(client_max_size=0)
     app.router.add_get("/", _h_health)
+    app.router.add_get("/latest/{token}/{gid}", _h_latest)
     app.router.add_get("/dl/{token}/{gid}/{fname}", _h_download)
     runner = web.AppRunner(app)
     await runner.setup()
