@@ -470,9 +470,10 @@ async def restore_cmd(interaction: discord.Interaction,
     # Source: a .zip link (downloaded + extracted) OR a saved backup on disk.
     source_gid = None
     if link:
-        if not link.lower().startswith(("http://", "https://")) or ".zip" not in link.lower():
+        link = link.strip().replace(" ", "")   # tolerate accidental spaces in pasted URLs
+        if not link.lower().startswith(("http://", "https://")):
             return await interaction.response.send_message(
-                "❌ لازم رابط .zip مباشر / link must be a direct .zip URL.", ephemeral=True)
+                "❌ لازم رابط http(s) صحيح / link must be a valid http(s) URL.", ephemeral=True)
     else:
         try:
             source_gid = int(source) if source else interaction.guild.id
