@@ -33,6 +33,7 @@ class Progress:
     started: float = field(default_factory=time.time)
     error: Optional[str] = None
     cancelled: bool = False
+    skipped: list = field(default_factory=list)   # channels denied (no access)
 
     def elapsed(self) -> float:
         return time.time() - self.started
@@ -242,6 +243,7 @@ async def _scrape_channel(channel, conn, session, attachments_dir,
                 batch_atts.clear()
     except discord.Forbidden:
         log.info("no access to #%s, skipping", channel.name)
+        progress.skipped.append(channel.name)
     finally:
         for row in batch_msgs:
             storage.upsert_message(conn, row)
@@ -332,6 +334,12 @@ async def run_backup(guild: discord.Guild, progress: Progress,
                        error=progress.error)
     run = storage.latest_run(conn)
     conn.close()
+
+    if progress.skipped:
+        log.warning("⚠️ %d channel(s) SKIPPED — bot denied access (give it Administrator): %s",
+                    len(progress.skipped), ", ".join("#" + s for s in progress.skipped))
+    else:
+        log.info("✅ no channels skipped — full read access.")
 
     # Persist a quick-glance summary outside the DB too.
     storage.write_json(guild.id, "last_backup.json", run)
