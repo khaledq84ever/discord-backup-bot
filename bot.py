@@ -141,6 +141,9 @@ async def on_ready():
         bot.loop.create_task(_auto_loop())
 
 
+WELCOME_URL = os.getenv("LANDING_URL", "https://discordbackupbot.vercel.app")
+
+
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     # Make slash commands appear instantly the moment the bot is added.
@@ -151,6 +154,39 @@ async def on_guild_join(guild: discord.Guild):
         log.info("synced commands to new guild %s (%s)", guild.id, guild.name)
     except Exception as e:  # noqa: BLE001
         log.warning("guild_join sync failed: %s", e)
+
+    # First-join welcome message — how to use it + the website.
+    try:
+        me = guild.me
+        ch = guild.system_channel
+        if ch is None or not ch.permissions_for(me).send_messages:
+            ch = next((c for c in guild.text_channels
+                       if c.permissions_for(me).send_messages), None)
+        if ch is None:
+            return
+        e = discord.Embed(
+            title="💾 BackUp Bot — أهلاً فيك! / Thanks for adding me!",
+            description=("أحفظ سيرفرك بالكامل: كل الرسائل، الرومات، الرولات، الأعضاء، والصور.\n"
+                         "I archive your whole server — every message, channel, role, member & file."),
+            color=0x5865F2, url=WELCOME_URL)
+        e.add_field(
+            name="🚀 طريقة الاستخدام / How to use",
+            value=("**1.** فعّل صلاحية **Administrator** لرول البوت عشان يقرأ كل الرومات\n"
+                   "Give my role **Administrator** so I can read every channel\n"
+                   "**2.** `/backup` — نسخة كاملة للسيرفر / full server backup\n"
+                   "**3.** `/download` — رابط تحميل النسخة / download link\n"
+                   "**4.** `/restore link:<url>` — استعد/انسخ سيرفر / restore or clone"),
+            inline=False)
+        e.add_field(
+            name="📋 كل الأوامر / All commands",
+            value="`/backup` · `/download` · `/restore` · `/status` · `/schedule` · `/search` · `/help`",
+            inline=False)
+        e.add_field(name="🌐 الموقع / Website", value=WELCOME_URL, inline=False)
+        e.set_footer(text="تحتاج صلاحية Manage Server · Manage Server required")
+        await ch.send(embed=e)
+        log.info("sent welcome to %s", guild.id)
+    except Exception as ex:  # noqa: BLE001
+        log.warning("welcome message failed: %s", ex)
 
 
 async def _auto_loop():
@@ -266,12 +302,16 @@ def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
                 value=f"`{bar}` {pct:.0f}%\n"
                       f"{p.channels_done} / {p.channels_total} channels",
                 inline=False)
-    e.add_field(name="💬 Messages",    value=f"{p.messages:,}",     inline=True)
-    e.add_field(name="📎 Attachments", value=f"{p.attachments:,}",  inline=True)
-    e.add_field(name="💾 Downloaded",  value=_fmt_size(p.bytes),    inline=True)
-    e.add_field(name="⏱️ Elapsed",     value=f"{p.elapsed():.0f} s", inline=True)
+    el = max(p.elapsed(), 0.001)
+    speed = p.bytes / el
+    e.add_field(name="💬 Messages",    value=f"{p.messages:,}",        inline=True)
+    e.add_field(name="📎 Attachments", value=f"{p.attachments:,}",     inline=True)
+    e.add_field(name="💾 Downloaded",  value=_fmt_size(p.bytes),       inline=True)
+    e.add_field(name="🚀 Speed",       value=f"{_fmt_size(int(speed))}/s", inline=True)
+    e.add_field(name="⚡ Msgs/s",      value=f"{p.messages / el:.0f}", inline=True)
+    e.add_field(name="⏱️ Elapsed",     value=f"{p.elapsed():.0f} s",    inline=True)
     if not done and p.current_channel:
-        e.add_field(name="🔄 Channel", value=f"#{p.current_channel}", inline=True)
+        e.add_field(name="🔄 Now archiving", value=f"#{p.current_channel}", inline=False)
     if done and zip_path:
         e.add_field(name="📦 Snapshot",
                     value=f"`{os.path.basename(zip_path)}` ({_fmt_size(zip_size or 0)})",
