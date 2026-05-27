@@ -164,7 +164,7 @@ async def _auto_loop():
                     in_flight[guild_id] = progress
                     try:
                         await backup.run_backup(guild, progress)
-                        storage.make_zip(guild_id, "auto")
+                        await asyncio.to_thread(storage.make_zip, guild_id, "auto")
                     finally:
                         in_flight.pop(guild_id, None)
             except Exception as e:
@@ -224,7 +224,9 @@ async def backup_cmd(interaction: discord.Interaction):
     bot.loop.create_task(_ticker())
     try:
         await backup.run_backup(interaction.guild, progress)
-        zip_path = storage.make_zip(interaction.guild.id, "manual")
+        # Zipping ~1GB is heavy + synchronous — run it off the event loop so the
+        # bot's heartbeat doesn't block (was causing "heartbeat blocked" + freezes).
+        zip_path = await asyncio.to_thread(storage.make_zip, interaction.guild.id, "manual")
         zip_size = os.path.getsize(zip_path)
     except Exception as e:
         progress.error = str(e)
@@ -309,7 +311,8 @@ async def status_cmd(interaction: discord.Interaction):
         return await interaction.response.send_message(
             "ماكو نسخة بعد / no backups yet. Use **/backup** to create one.",
             ephemeral=True)
-    folder_bytes = storage.dir_size(storage.guild_dir(interaction.guild.id))
+    folder_bytes = await asyncio.to_thread(
+        storage.dir_size, storage.guild_dir(interaction.guild.id))
     e = discord.Embed(title="📊 آخر نسخة احتياطية / Latest backup",
                       color=0x5865F2)
     e.add_field(name="🕒 Started", value=run["started_at"], inline=True)
