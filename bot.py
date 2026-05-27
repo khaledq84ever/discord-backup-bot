@@ -23,6 +23,7 @@ from aiohttp import web
 
 import backup
 import config
+import restore as restore_engine
 import storage
 
 logging.basicConfig(level=logging.INFO,
@@ -319,6 +320,87 @@ async def download_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         content="📦 آخر نسخة / latest archive:",
         file=discord.File(path), ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /restore
+# --------------------------------------------------------------------------- #
+def _restore_embed(p, guild_name: str) -> discord.Embed:
+    if p.done and not p.error:
+        color, title = 0x57f287, "✅ تمّت الاستعادة / Restore complete"
+    elif p.error:
+        color, title = 0xe8001c, "❌ فشل / Restore failed"
+    else:
+        color, title = 0x5865f2, "♻️ جارٍ الاستعادة… / Restoring…"
+    e = discord.Embed(title=f"{title}", description=f"**{guild_name}**", color=color)
+    e.add_field(name="الرولات / Roles", value=str(p.roles))
+    e.add_field(name="التصنيفات / Categories", value=str(p.categories))
+    e.add_field(name="الرومات / Channels", value=str(p.channels))
+    e.add_field(name="الإيموجي / Emojis", value=str(p.emojis))
+    e.add_field(name="الرسائل / Messages", value=str(p.messages))
+    e.add_field(name="المرحلة / Stage", value=p.stage)
+    if p.error:
+        e.add_field(name="خطأ / Error", value=p.error[:1000], inline=False)
+    return e
+
+
+@tree.command(name="restore",
+              description="استعد سيرفر من نسخة / Rebuild a server from a backup")
+@app_commands.describe(
+    source="ID سيرفر النسخة (فاضي = هنا) / backup source guild id (blank = here)",
+    target="ID السيرفر الوجهة (فاضي = هنا) / target guild id (blank = here)",
+    messages="استرجاع الرسائل أيضاً؟ بطيء / replay messages too (slow)")
+async def restore_cmd(interaction: discord.Interaction,
+                      source: Optional[str] = None,
+                      target: Optional[str] = None,
+                      messages: bool = True):
+    if not interaction.guild or not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+    try:
+        source_gid = int(source) if source else interaction.guild.id
+    except ValueError:
+        return await interaction.response.send_message(
+            "ID غير صحيح / invalid source id.", ephemeral=True)
+    if target:
+        try:
+            target_guild = bot.get_guild(int(target))
+        except ValueError:
+            target_guild = None
+        if target_guild is None:
+            return await interaction.response.send_message(
+                "❌ البوت مو موجود بسيرفر بهالـID — ضيفه هناك أول.\n"
+                "Bot isn't in a server with that ID — add it there first.", ephemeral=True)
+    else:
+        target_guild = interaction.guild
+    if not storage.read_json(source_gid, "channels.json"):
+        return await interaction.response.send_message(
+            "ماكو نسخة محفوظة لهالسيرفر / no backup found for that source id.", ephemeral=True)
+    me = target_guild.me
+    if me is None or not me.guild_permissions.administrator:
+        return await interaction.response.send_message(
+            "❌ أحتاج صلاحية Administrator في السيرفر الوجهة.\n"
+            "I need the Administrator permission in the target server.", ephemeral=True)
+
+    await interaction.response.defer(thinking=True)
+    holder: dict = {}
+    task = asyncio.create_task(restore_engine.restore(
+        source_gid, target_guild, with_messages=messages,
+        progress=lambda pp: holder.__setitem__("p", pp)))
+    while not task.done():
+        await asyncio.sleep(3)
+        if "p" in holder:
+            try:
+                await interaction.edit_original_response(
+                    embed=_restore_embed(holder["p"], target_guild.name))
+            except discord.HTTPException:
+                pass
+    p = await task
+    try:
+        await interaction.edit_original_response(
+            embed=_restore_embed(p, target_guild.name))
+    except discord.HTTPException:
+        pass
 
 
 # --------------------------------------------------------------------------- #
