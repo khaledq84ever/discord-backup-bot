@@ -30,6 +30,9 @@ log = logging.getLogger("restore")
 # rate-limited, so a huge server (100k+ msgs) would take many hours — cap by default.
 MSG_LIMIT = int(os.getenv("RESTORE_MSG_LIMIT", "300"))
 SEND_DELAY = float(os.getenv("RESTORE_SEND_DELAY", "0.15"))  # 0 = fastest (discord.py self-throttles)
+# Restore this many channels at once. Discord rate-limits per-channel, so going
+# parallel is dramatically faster than one channel at a time.
+CONCURRENCY = int(os.getenv("RESTORE_CONCURRENCY", "6"))
 
 _TEXT_TYPES = ("text", "news")
 _VOICE_TYPES = ("voice", "stage_voice")

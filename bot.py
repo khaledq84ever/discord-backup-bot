@@ -12,6 +12,7 @@ Slash commands:
 """
 import asyncio
 import hashlib
+import hmac
 import logging
 import os
 import time
@@ -44,17 +45,26 @@ tree = app_commands.CommandTree(bot)
 # --------------------------------------------------------------------------- #
 _PORT = int(os.getenv("PORT", "8080"))
 _PUBLIC_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
-# Stable, unguessable secret. Set DOWNLOAD_SECRET to override; otherwise derived
-# from the bot token so links survive restarts without extra config.
+# Stable, unguessable root secret. Set DOWNLOAD_SECRET to override; otherwise
+# derived from the bot token so links survive restarts without extra config.
 DOWNLOAD_SECRET = (os.getenv("DOWNLOAD_SECRET", "").strip()
                    or hashlib.sha256((config.DISCORD_TOKEN or "x").encode()).hexdigest()[:24])
 _web_started = False
 
 
-def _download_link(guild_id: int, filename: str) -> Optional[str]:
+def _guild_token(guild_id: int) -> str:
+    """Per-server download token. HMAC the root secret with the guild id so each
+    server gets a *different*, unguessable token — and knowing one server's link
+    never reveals another's (you can't swap the guild id and reach its backup)."""
+    return hmac.new(DOWNLOAD_SECRET.encode(), str(guild_id).encode(),
+                    hashlib.sha256).hexdigest()[:24]
+
+
+def _latest_link(guild_id: int) -> Optional[str]:
+    """A stable per-server link that always serves this guild's newest snapshot."""
     if not _PUBLIC_DOMAIN:
         return None
-    return f"https://{_PUBLIC_DOMAIN}/dl/{DOWNLOAD_SECRET}/{guild_id}/{filename}"
+    return f"https://{_PUBLIC_DOMAIN}/latest/{_guild_token(guild_id)}/{guild_id}"
 
 
 async def _h_health(request):
@@ -63,11 +73,11 @@ async def _h_health(request):
 
 async def _h_latest(request):
     """Always serve the NEWEST .zip snapshot for a guild — a stable link."""
-    if request.match_info["token"] != DOWNLOAD_SECRET:
-        return web.Response(status=403, text="forbidden")
     gid = request.match_info["gid"]
     if not gid.isdigit():
         return web.Response(status=400, text="bad request")
+    if not hmac.compare_digest(request.match_info["token"], _guild_token(int(gid))):
+        return web.Response(status=403, text="forbidden")
     bdir = storage.backups_dir(int(gid))
     try:
         zips = [f for f in os.listdir(bdir) if f.endswith(".zip")]
@@ -82,11 +92,11 @@ async def _h_latest(request):
 
 
 async def _h_download(request):
-    if request.match_info["token"] != DOWNLOAD_SECRET:
-        return web.Response(status=403, text="forbidden")
     gid, fname = request.match_info["gid"], request.match_info["fname"]
     if not gid.isdigit() or "/" in fname or ".." in fname or not fname.endswith(".zip"):
         return web.Response(status=400, text="bad request")
+    if not hmac.compare_digest(request.match_info["token"], _guild_token(int(gid))):
+        return web.Response(status=403, text="forbidden")
     path = os.path.join(storage.backups_dir(int(gid)), fname)
     if not os.path.isfile(path):
         return web.Response(status=404, text="not found")
@@ -316,7 +326,11 @@ def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
         e.add_field(name="📦 Snapshot",
                     value=f"`{os.path.basename(zip_path)}` ({_fmt_size(zip_size or 0)})",
                     inline=False)
-        e.set_footer(text="Use /download to fetch the archive.")
+        link = _latest_link(guild.id)
+        if link:
+            e.add_field(name="🔗 رابط سيرفرك / Your server's link",
+                        value=link, inline=False)
+        e.set_footer(text="رابط خاص بسيرفرك · private to this server · or use /download")
     return e
 
 
@@ -377,7 +391,11 @@ async def status_cmd(interaction: discord.Interaction):
                 value=_fmt_size(folder_bytes), inline=True)
     if run["error"]:
         e.add_field(name="⚠️ Error", value=str(run["error"]), inline=False)
-    e.set_footer(text="Use /download to fetch the .zip snapshot.")
+    link = _latest_link(interaction.guild.id)
+    if link:
+        e.add_field(name="🔗 رابط سيرفرك / Your server's link",
+                    value=link, inline=False)
+    e.set_footer(text="رابط خاص بسيرفرك · private to this server · or use /download")
     await interaction.response.send_message(embed=e, ephemeral=True)
 
 
@@ -400,21 +418,24 @@ async def download_cmd(interaction: discord.Interaction):
             ephemeral=True)
     path = zips[0]
     size = os.path.getsize(path)
+    # Each server has its own private link, unique to this guild.
+    link = _latest_link(interaction.guild.id)
+    link_line = (f"\n🔗 رابط سيرفرك الخاص / your server's private link:\n{link}"
+                 if link else "")
     # Discord limit for a normal bot upload is 25 MB; nitro-boosted servers
-    # raise it. Past that, point at the on-disk path instead.
+    # raise it. Past that, the private link is the only way out.
     if size > 25 * 1024 * 1024:
-        link = _download_link(interaction.guild.id, os.path.basename(path))
         if link:
             return await interaction.response.send_message(
-                f"📦 الأرشيف كبير ({_fmt_size(size)}) — حمّله من هنا (رابط خاص):\n{link}\n"
-                f"⬇️ Large archive — download via this private link.",
+                f"📦 الأرشيف كبير ({_fmt_size(size)}) — حمّله من هنا (رابط خاص بسيرفرك):"
+                f"{link_line}\n⬇️ Large archive — download via this private link.",
                 ephemeral=True)
         return await interaction.response.send_message(
             f"📦 الأرشيف كبير ({_fmt_size(size)}) — حمّله من السيرفر:\n"
             f"`{path}`\nfile too large for direct upload ({_fmt_size(size)}).",
             ephemeral=True)
     await interaction.response.send_message(
-        content="📦 آخر نسخة / latest archive:",
+        content="📦 آخر نسخة / latest archive:" + link_line,
         file=discord.File(path), ephemeral=True)
 
 
