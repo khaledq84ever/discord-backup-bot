@@ -415,7 +415,12 @@ def _summary_embed(guild: discord.Guild, zip_path: str, zip_size: int,
     e.add_field(name="📦 آخر ملف نسخة / Last backup file",
                 value=f"`{os.path.basename(zip_path)}` ({_fmt_size(zip_size or 0)})",
                 inline=False)
-    e.set_footer(text="رابط خاص بسيرفرك · private to this server · أو استخدم /download")
+    e.add_field(
+        name="♻️ استعد بأي سيرفر / Restore to ANY server",
+        value=("بأي سيرفر فيه البوت اكتب:\nIn any server that has the bot, run:\n"
+               "`/restore link:` ‹الرابط فوق / the link above›"),
+        inline=False)
+    e.set_footer(text="رابط سري — استعمله مع /restore بأي سيرفر · secret link — restore it to ANY server via /restore")
     return e
 
 
@@ -458,7 +463,7 @@ def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
         if link:
             e.add_field(name="🔗 رابط سيرفرك / Your server's link",
                         value=link, inline=False)
-        e.set_footer(text="رابط خاص بسيرفرك · private to this server · or use /download")
+        e.set_footer(text="رابط سري — استعمله مع /restore بأي سيرفر · secret link — restore it to ANY server via /restore")
     return e
 
 
@@ -523,7 +528,7 @@ async def status_cmd(interaction: discord.Interaction):
     if link:
         e.add_field(name="🔗 رابط سيرفرك / Your server's link",
                     value=link, inline=False)
-    e.set_footer(text="رابط خاص بسيرفرك · private to this server · or use /download")
+    e.set_footer(text="رابط سري — استعمله مع /restore بأي سيرفر · secret link — restore it to ANY server via /restore")
     await interaction.response.send_message(embed=e, ephemeral=True)
 
 
