@@ -1,0 +1,105 @@
+================================================================
+  LAST POINT — Discord BackUp Bot  (saved 2026-06-04)
+================================================================
+
+PROJECT
+  Path : /home/khaled/discord bot/discord-backup-bot/   (QUOTE the space in path)
+  Git  : github.com/khaledq84ever/discord-backup-bot  (branch: master, auto-deploys)
+  Bot  : Railway service "backup-bot" -> backup-bot-production.up.railway.app
+  Web  : discordbackupbot.vercel.app  (Vercel project "backupbot")
+         deploy web: cd web && vercel --prod --yes
+                     then: vercel alias set <new-url> discordbackupbot.vercel.app
+  App ID: 1509128697129734285   |  invite permissions: 8 (Administrator)
+
+----------------------------------------------------------------
+  PROMPT TO PASTE NEXT SESSION (after tokens reset)
+----------------------------------------------------------------
+Read the memory files project_discord_backup_bot_RESUME.md and
+project_discord_backup_bot.md before doing anything. That's the BackUp Bot at
+"/home/khaled/discord bot/discord-backup-bot/" (quote the space in the path).
+
+Everything in the "SHIPPED" section is DONE and live - don't redo it. Verify the
+deploy is healthy (curl backup-bot-production.up.railway.app/ and
+discordbackupbot.vercel.app), then continue the OPEN work: the enterprise
+architecture spec (PostgreSQL migration, Cloudflare R2 object storage for
+attachments, real-time on_message archiver, content-hash dedup, integrity score
+0-100%, share-link expiry/password/one-time/access-logs, Next.js dashboard,
+JWT + RBAC + rate limiting + encryption at rest).
+
+Build it PHASED - one phase at a time, compile + test + deploy each before the
+next. Don't one-shot it. Start with Phase 2 (PostgreSQL + R2 storage) unless I
+say otherwise. Rules: discord.py gthread (never gevent); don't redeploy
+mid-backup/mid-restore; push to master; commit per change; show before/after
+boxes (green arrows). Then tell me the next step.
+
+----------------------------------------------------------------
+  SHIPPED THIS SESSION (DONE + LIVE - do not redo)
+----------------------------------------------------------------
+[5c73cec] Full day-1 backup: DB writes off event loop (asyncio.to_thread
+          _flush_batch) + open_db(check_same_thread=False) + sleep(0) -> no
+          heartbeat-block disconnects (was truncating big channels to ~300-500).
+          _scrape_channel RESUMES on transient drops, <=8x backoff, from
+          newest_message_id. No message cap (limit=None).
+[b300f52] Restore "0 messages" fix: replay into EVERY EMPTY mapped channel (not
+          just newly-created) -> fills empty/new servers fully; skips channels
+          that already have content. restore_from_zip validates is_zipfile+size.
+          Retention/dedup: make_zip -> prune_backups(keep=1); hourly cleanup loop;
+          BACKUP_RETENTION_DAYS=3.
+          Admin invite: INVITE_PERMISSIONS=8; on_guild_join posts 1-click admin
+          re-invite when bot lacks admin.
+          /stats (real-time servers/snapshots/data bar/timeband). Health "/" live.
+          /report (tap-to-copy: bot_admin, channels_read X/total + BLOCKED, TOTAL
+          messages/attachments, link). /report + /status show TOTAL COUNT(*) now,
+          not the last-run delta.
+          Loud SKIPPED-channels warning on /backup + admin link.
+          Shield avatar served at /icon.png (set once if avatar is None).
+          Premium landing redesign (web/index.html) - live + verified.
+
+----------------------------------------------------------------
+  KEY DIAGNOSIS (the "only 207 / 1 message" confusion)
+----------------------------------------------------------------
+- "1 GB" = attachments/images, NOT a message count.
+- "messages: 1" was the LAST RUN delta -> now fixed to show TOTAL.
+- Restore can only replay what the backup HOLDS.
+- Backups were incomplete because the bot LACKED ADMINISTRATOR on big servers
+  (logs showed 8-66 channels SKIPPED). USER MUST grant admin per server, then
+  re-run /backup (blocked channels have 0 stored -> next backup pulls FULL
+  day-1 history). Re-invite (admin) link:
+  https://discord.com/oauth2/authorize?client_id=1509128697129734285&permissions=8&scope=bot%20applications.commands
+- Restore is slow on big channels = Discord webhook rate-limit (per-author
+  name/avatar varies). After a restore finishes, set RESTORE_SEND_DELAY=0.5 on
+  Railway for ~4x smoother. DO NOT change mid-restore (redeploy kills the run).
+
+----------------------------------------------------------------
+  OPEN / NEXT (enterprise architecture spec - phased)
+----------------------------------------------------------------
+Current stack = discord.py + SQLite-per-guild + local volume.
+HAVE already: full structure (cats/text/voice/forum/threads/positions/topics/
+  overwrites), roles, server settings, message archive, incremental, restore
+  dependency order, HMAC share links.
+TO BUILD (phased):
+  Phase 1 (mostly done): real-time on_message archiver, integrity score, /report.
+  Phase 2: PostgreSQL (Railway plugin) + Cloudflare R2 object storage for
+           attachments + replace CDN urls + content-hash (sha256) dedup.
+  Phase 3: Next.js dashboard (view/restore/download/logs) + JWT + RBAC +
+           rate limiting + encryption at rest.
+  Plus: integrity score 0-100% + missing channel/role/file detection; share-link
+        expiry/password/one-time/download-tracking/access-logs; versioning/
+        snapshots/rollback/checkpoints; automated tests (backup/restore/perm-map/
+        msg-recovery/attachment-recovery/large-server perf).
+  HONEST: multi-week. Do one phase at a time: build + test + deploy before next.
+
+----------------------------------------------------------------
+  GOTCHAS
+----------------------------------------------------------------
+- discord.py (no voice); worker gthread, NEVER gevent.
+- open_db now uses check_same_thread=False (off-loop flushes).
+- Railway vars: INVITE_PERMISSIONS=8, BACKUP_RETENTION_DAYS=3,
+  RESTORE_MSG_LIMIT=0, MAX_ATTACHMENT_MB=500.
+- Don't redeploy mid-backup or mid-restore (restart kills the in-progress run;
+  backup resumes incrementally on re-run, restore does not resume partial channels).
+- Support button on the landing page points to x.com/KhaledQ84Ever (no support
+  server invite exists yet - ask user for a discord.gg if they want a real one).
+
+Full details: memory file project_discord_backup_bot_RESUME.md
+================================================================
