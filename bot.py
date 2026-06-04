@@ -299,6 +299,41 @@ async def _h_admin_restore(request):
                               "hint": "poll /admin/<secret>/logs"})
 
 
+async def _h_admin_dedup(request):
+    """Reclaim disk by collapsing duplicate (sha256-identical) attachments across
+    every backed-up guild. No owner slash command needed."""
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    before = storage.storage_stats().get("used_bytes", 0)
+    stats = await asyncio.to_thread(storage.dedup_all)
+    after = storage.storage_stats().get("used_bytes", 0)
+    log.info("admin-triggered dedup DONE — files_removed=%s bytes_reclaimed=%s",
+             stats.get("files_removed"), stats.get("bytes_reclaimed"))
+    return web.json_response({
+        "status": "done", **stats,
+        "volume_used_before": before, "volume_used_after": after,
+    })
+
+
+async def _h_admin_backup_all(request):
+    """Fire a full backup for EVERY guild the bot is in (skips ones already
+    running). Returns the list of guilds queued."""
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    queued, skipped = [], []
+    for guild in bot.guilds:
+        if guild.id in in_flight:
+            skipped.append(guild.id)
+            continue
+        bot.loop.create_task(_admin_backup_task(guild))
+        queued.append(guild.id)
+    log.info("admin-triggered backup_all — queued %s, skipped %s (in-flight)",
+             len(queued), len(skipped))
+    return web.json_response({"status": "started", "queued": queued,
+                              "skipped_in_flight": skipped,
+                              "hint": "poll /admin/<secret>/logs and /integrity?guild="})
+
+
 async def _start_webserver():
     app = web.Application(client_max_size=0)
     app.router.add_get("/", _h_health)
@@ -311,6 +346,8 @@ async def _start_webserver():
     app.router.add_get("/admin/{secret}/stats", _h_admin_stats)
     app.router.add_get("/admin/{secret}/integrity", _h_admin_integrity)
     app.router.add_post("/admin/{secret}/backup", _h_admin_backup)
+    app.router.add_post("/admin/{secret}/backup_all", _h_admin_backup_all)
+    app.router.add_post("/admin/{secret}/dedup", _h_admin_dedup)
     app.router.add_post("/admin/{secret}/restore", _h_admin_restore)
     runner = web.AppRunner(app)
     await runner.setup()
