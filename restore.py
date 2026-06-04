@@ -184,24 +184,39 @@ async def restore(source_gid: int, guild: discord.Guild, *,
             except Exception:
                 pass
 
-        # ---- 4. Messages via webhooks — ONLY into newly-created channels ----
-        # (re-restore skips channels that already exist → no duplicates, much faster)
-        if with_messages and created_channel_ids:
+        # ---- 4. Messages via webhooks — into every mapped channel that is EMPTY ----
+        # Replays into NEW channels AND pre-existing same-named channels that have no
+        # messages yet, so a full restore works even when the target already has the
+        # channels (the old code only replayed into newly-created ones → "0 messages"
+        # whenever a same-named channel already existed). Channels that already contain
+        # messages are skipped, so re-running never duplicates.
+        if with_messages and chan_map:
             p.stage = "messages"; tick()
             conn = storage.open_db(source_gid)
             limit_sql = f"LIMIT {MSG_LIMIT}" if MSG_LIMIT > 0 else ""
-            for old_cid in created_channel_ids:
-                new_ch = chan_map.get(old_cid)
+            for old_cid, new_ch in chan_map.items():
                 if not isinstance(new_ch, discord.TextChannel):
+                    continue
+                # Skip channels that already have content (idempotent — no duplicates).
+                try:
+                    has_content = False
+                    async for _ in new_ch.history(limit=1):
+                        has_content = True
+                        break
+                    if has_content and old_cid not in created_channel_ids:
+                        continue
+                except discord.HTTPException:
+                    pass
+                rows = conn.execute(
+                    f"""SELECT id, author_name, author_id, content, embeds_json
+                        FROM messages WHERE channel_id = ?
+                        ORDER BY id ASC {limit_sql}""", (old_cid,)).fetchall()
+                if not rows:
                     continue
                 try:
                     wh = await new_ch.create_webhook(name="BackUp Restore")
                 except discord.HTTPException:
                     continue
-                rows = conn.execute(
-                    f"""SELECT id, author_name, author_id, content, embeds_json
-                        FROM messages WHERE channel_id = ?
-                        ORDER BY id ASC {limit_sql}""", (old_cid,)).fetchall()
                 for mid, aname, aid, content, embeds_json in rows:
                     files = _load_attachments(conn, mid, source_gid)
                     embeds = _load_embeds(embeds_json)
@@ -326,6 +341,28 @@ async def restore_from_zip(url: str, guild: discord.Guild, *,
                 with open(zpath, "wb") as f:
                     async for chunk in r.content.iter_chunked(1 << 16):
                         f.write(chunk)
+
+        # Validate we actually got a real .zip (not an HTML error page, an expired
+        # link, or some other archive). zipfile auto-handles any compression inside.
+        size = os.path.getsize(zpath) if os.path.exists(zpath) else 0
+        if size < 100 or not zipfile.is_zipfile(zpath):
+            head = b""
+            try:
+                with open(zpath, "rb") as fh:
+                    head = fh.read(64)
+            except OSError:
+                pass
+            if head[:4] == b"Rar!" or head[:2] == b"\x1f\x8b":
+                p.error = ("that link is a .rar/.gz, not a .zip — re-export with "
+                           "/download or /backup (this bot makes .zip).")
+            else:
+                p.error = ("downloaded file isn't a valid .zip (the link may have "
+                           "expired or returned an error page). Run /backup again, "
+                           "then /download for a fresh link.")
+            p.done = True
+            if progress:
+                progress(p)
+            return p
 
         p.stage = "extracting"
         if progress:
