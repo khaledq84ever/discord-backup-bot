@@ -97,13 +97,19 @@ async def _h_latest(request):
         return web.Response(status=400, text="bad request")
     if not hmac.compare_digest(request.match_info["token"], _guild_token(int(gid))):
         return web.Response(status=403, text="forbidden")
+    # Enforce retention on access: dedup + drop zips older than the retention
+    # window, so an expired backup link 404s instead of serving stale data.
+    storage.prune_backups(int(gid))
     bdir = storage.backups_dir(int(gid))
     try:
         zips = [f for f in os.listdir(bdir) if f.endswith(".zip")]
     except OSError:
         zips = []
     if not zips:
-        return web.Response(status=404, text="no backup yet — run /backup first")
+        return web.Response(
+            status=404,
+            text="no backup yet (or it expired after "
+                 f"{int(config.BACKUP_RETENTION_DAYS)} days) — run /backup")
     newest = max(zips, key=lambda f: os.path.getmtime(os.path.join(bdir, f)))
     return web.FileResponse(
         os.path.join(bdir, newest),
@@ -258,6 +264,19 @@ def _fmt_size(n: int) -> str:
     return f"{f:.1f} {units[i]}"
 
 
+import re as _re
+# Bare custom-emoji id tokens (`:899471179822293042:`) that Discord can't render
+# inside an embed — strip them so channel names read cleanly.
+_EMOJI_ID_RE = _re.compile(r":\d{15,}:")
+
+
+def _clean_channel_name(name: str) -> str:
+    """Drop unrenderable custom-emoji id codes + tidy separators for display."""
+    cleaned = _EMOJI_ID_RE.sub("", name or "")
+    cleaned = cleaned.strip(" \t·・|┃〢-")
+    return cleaned or (name or "")
+
+
 def _admin_only(interaction: discord.Interaction) -> bool:
     """Only members with Manage Server or Administrator can run backups."""
     p = interaction.user.guild_permissions  # type: ignore[union-attr]
@@ -366,16 +385,19 @@ def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
                 value=f"`{bar}` {pct:.0f}%\n"
                       f"{p.channels_done} / {p.channels_total} channels",
                 inline=False)
-    el = max(p.elapsed(), 0.001)
+    # Use a >=1s denominator so the first sub-second tick doesn't report
+    # absurd "912 GB/s" / millions-of-msgs-per-second to the user.
+    el = max(p.elapsed(), 1.0)
     speed = p.bytes / el
     e.add_field(name="💬 Messages",    value=f"{p.messages:,}",        inline=True)
     e.add_field(name="📎 Attachments", value=f"{p.attachments:,}",     inline=True)
     e.add_field(name="💾 Downloaded",  value=_fmt_size(p.bytes),       inline=True)
     e.add_field(name="🚀 Speed",       value=f"{_fmt_size(int(speed))}/s", inline=True)
-    e.add_field(name="⚡ Msgs/s",      value=f"{p.messages / el:.0f}", inline=True)
+    e.add_field(name="⚡ Msgs/s",      value=f"{p.messages / el:,.0f}", inline=True)
     e.add_field(name="⏱️ Elapsed",     value=f"{p.elapsed():.0f} s",    inline=True)
     if not done and p.current_channel:
-        e.add_field(name="🔄 Now archiving", value=f"#{p.current_channel}", inline=False)
+        e.add_field(name="🔄 Now archiving",
+                    value=f"#{_clean_channel_name(p.current_channel)}", inline=False)
     if done and zip_path:
         e.add_field(name="📦 Snapshot",
                     value=f"`{os.path.basename(zip_path)}` ({_fmt_size(zip_size or 0)})",

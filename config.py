@@ -28,6 +28,10 @@ MAX_ATTACHMENT_MB = int(os.getenv("MAX_ATTACHMENT_MB", "50"))
 # Auto-backup interval in hours (0 = off).
 AUTO_BACKUP_HOURS = int(os.getenv("AUTO_BACKUP_HOURS", "0"))
 
+# How many days a .zip snapshot is kept on the server before auto-delete.
+# Only the newest zip per guild is ever kept (duplicates are pruned).
+BACKUP_RETENTION_DAYS = float(os.getenv("BACKUP_RETENTION_DAYS", "3"))
+
 
 def invite_url() -> str:
     if not APPLICATION_ID:

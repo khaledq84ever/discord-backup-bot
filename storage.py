@@ -188,7 +188,10 @@ def latest_run(conn: sqlite3.Connection) -> Optional[dict]:
 #  Zip snapshot — one .zip per /backup call, easy to download/share
 # --------------------------------------------------------------------------- #
 def make_zip(guild_id: int, label: str) -> str:
-    """Bundle the current backup contents into a ZIP. Returns the path."""
+    """Bundle the current backup contents into a ZIP. Returns the path.
+
+    After writing, prunes the backups dir so only this newest snapshot remains
+    (no duplicate zips piling up when /backup is run repeatedly)."""
     src = guild_dir(guild_id)
     out = os.path.join(backups_dir(guild_id),
                        f"{label}-{int(time.time())}.zip")
@@ -201,7 +204,42 @@ def make_zip(guild_id: int, label: str) -> str:
             for name in files:
                 fp = os.path.join(root, name)
                 z.write(fp, arcname=os.path.relpath(fp, src))
+    # Dedup: keep only this newest zip; drop older/duplicate snapshots.
+    prune_backups(guild_id, keep=1)
     return out
+
+
+def prune_backups(guild_id: int, keep: int = 1,
+                  max_age_days: Optional[float] = None) -> int:
+    """Enforce retention on a guild's .zip snapshots:
+      • keep only the newest `keep` zips (dedup — removes duplicate backups), and
+      • delete any zip older than `max_age_days` (default config.BACKUP_RETENTION_DAYS),
+        so a backup the user requested is only stored for that many days.
+    Returns the number of files removed."""
+    if max_age_days is None:
+        max_age_days = float(getattr(config, "BACKUP_RETENTION_DAYS", 3))
+    bdir = backups_dir(guild_id)
+    try:
+        zips = [os.path.join(bdir, f) for f in os.listdir(bdir)
+                if f.endswith(".zip")]
+    except OSError:
+        return 0
+    zips.sort(key=os.path.getmtime, reverse=True)   # newest first
+    cutoff = time.time() - max_age_days * 86400
+    removed = 0
+    for i, fp in enumerate(zips):
+        beyond_keep = i >= keep
+        try:
+            too_old = os.path.getmtime(fp) < cutoff
+        except OSError:
+            too_old = False
+        if beyond_keep or too_old:
+            try:
+                os.remove(fp)
+                removed += 1
+            except OSError:
+                pass
+    return removed
 
 
 def dir_size(path: str) -> int:
