@@ -12,6 +12,22 @@ PROJECT
   App ID: 1509128697129734285   |  invite permissions: 8 (Administrator)
 
 ----------------------------------------------------------------
+  SHIPPED 2026-06-04 (later) — DONE & LIVE, do NOT redo
+----------------------------------------------------------------
+  - sha256 content-hash attachment DEDUP: attachments stored once
+    (attachments/sha/<aa>/<sha><ext>). New /dedup command reclaims
+    existing dupes (owner: /dedup all_servers:True). storage.dedup_*.
+  - INTEGRITY SCORE 0-100% per backup (channel 70% + attachment 30%),
+    lists gaps (skipped channels / failed / oversize). Persisted as
+    backup_runs.integrity_json; shown on /backup embed + /report.
+  - COPYABLE OUTPUT: new /copy = all commands + status + integrity +
+    links as tap-to-copy code blocks (embeds aren't copyable on mobile).
+    /help now lists all 12 commands + copy block.
+  - 12 slash commands total. Deploy ea1f8c51 SUCCESS, 0 errors.
+  - USER ACTION PENDING: run /dedup all_servers:True to reclaim ~12.6GB.
+  Generic storage._MIGRATIONS auto-adds new columns to old per-guild DBs.
+
+----------------------------------------------------------------
   PROMPT TO PASTE NEXT SESSION (after tokens reset)
 ----------------------------------------------------------------
 Read the memory files project_discord_backup_bot_RESUME.md and
