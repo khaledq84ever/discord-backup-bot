@@ -336,12 +336,16 @@ async def _scrape_channel(channel, conn, session,
 # --------------------------------------------------------------------------- #
 #  Full guild backup
 # --------------------------------------------------------------------------- #
+# Channels we scrape DIRECTLY via .history(). NOTE: forum channels are deliberately
+# excluded — a ForumChannel has no .history() (it holds threads, not messages), so
+# scraping one raised "'ForumChannel' object has no attribute 'history'" and the
+# channel was logged as failed. Forum *threads* are still captured below (active via
+# guild.threads + archived via the per-parent archived_threads pass that includes forum).
 TEXTLIKE = (discord.ChannelType.text,
             discord.ChannelType.news,
             discord.ChannelType.public_thread,
             discord.ChannelType.private_thread,
             discord.ChannelType.news_thread,
-            discord.ChannelType.forum,
             discord.ChannelType.voice)  # voice channels can have text in newer Discord
 
 
@@ -385,8 +389,11 @@ async def run_backup(guild: discord.Guild, progress: Progress,
     storage.write_json(guild.id, "members.json",  snapshot_members(guild))
     storage.write_json(guild.id, "emojis.json",   snapshot_emojis(guild))
 
-    conn = storage.open_db(guild.id)
-    run_id = storage.start_run(conn)
+    # All of these do synchronous SQLite work incl. conn.commit(); run them OFF the
+    # event loop so a slow/locked commit can't block the gateway heartbeat (the
+    # "heartbeat blocked for more than 10 seconds" freeze traced to start_run's commit).
+    conn = await asyncio.to_thread(storage.open_db, guild.id)
+    run_id = await asyncio.to_thread(storage.start_run, conn)
     storage.attachments_dir(guild.id)  # ensure the dir exists before scraping
 
     if specific_channel is not None:
@@ -407,15 +414,16 @@ async def run_backup(guild: discord.Guild, progress: Progress,
             progress.channels_done += 1
 
     integrity = progress.integrity()
-    storage.finish_run(conn, run_id,
-                       channels=progress.channels_done,
-                       messages=progress.messages,
-                       attachments=progress.attachments,
-                       byte_count=progress.bytes,
-                       error=progress.error,
-                       integrity_json=json.dumps(integrity, ensure_ascii=False))
-    run = storage.latest_run(conn)
-    conn.close()
+    await asyncio.to_thread(
+        storage.finish_run, conn, run_id,
+        channels=progress.channels_done,
+        messages=progress.messages,
+        attachments=progress.attachments,
+        byte_count=progress.bytes,
+        error=progress.error,
+        integrity_json=json.dumps(integrity, ensure_ascii=False))
+    run = await asyncio.to_thread(storage.latest_run, conn)
+    await asyncio.to_thread(conn.close)
 
     if progress.skipped:
         log.warning("⚠️ %d channel(s) SKIPPED — bot denied access (give it Administrator): %s",
