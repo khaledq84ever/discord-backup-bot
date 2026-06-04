@@ -204,30 +204,47 @@ async def restore(source_gid: int, guild: discord.Guild, *,
             for old_cid, new_ch in chan_map.items():
                 if not _replayable(new_ch):   # text + voice (voice has text chat)
                     continue
-                # Skip channels that already have content (idempotent — no duplicates).
-                try:
-                    has_content = False
-                    async for _ in new_ch.history(limit=1):
-                        has_content = True
-                        break
-                    if has_content and old_cid not in created_channel_ids:
-                        continue
-                except discord.HTTPException:
-                    pass
                 rows = conn.execute(
                     f"""SELECT id, author_name, author_id, content, embeds_json
                         FROM messages WHERE channel_id = ?
                         ORDER BY id ASC {limit_sql}""", (old_cid,)).fetchall()
                 if not rows:
                     continue
+                # RESUME instead of skip: count what's already in the target channel and
+                # skip that many replayable source rows, so an INTERRUPTED restore can be
+                # finished by re-running (the old code skipped any non-empty channel
+                # entirely, leaving a partially-restored channel stuck forever, e.g.
+                # #chatting frozen at 432/3892 after a mid-run restart).
+                already = 0
+                if old_cid not in created_channel_ids:
+                    try:
+                        async for _ in new_ch.history(limit=None):
+                            already += 1
+                    except discord.HTTPException:
+                        already = 0
+                # Replayable rows = those with content/embeds/attachments (what got sent).
+                # Cheap: pull the set of message ids that have an attachment in one query
+                # (don't read the files off disk just to count).
+                att_mids = {r[0] for r in conn.execute(
+                    "SELECT DISTINCT message_id FROM attachments WHERE channel_id = ?",
+                    (old_cid,)).fetchall()}
+                replayable = sum(
+                    1 for (mid, _a, _i, content, ej) in rows
+                    if content or mid in att_mids or _load_embeds(ej))
+                if already >= replayable:        # nothing new to add — fully restored
+                    continue
                 try:
                     wh = await new_ch.create_webhook(name="BackUp Restore")
                 except discord.HTTPException:
                     continue
+                skip = already                   # resume point: skip already-sent rows
                 for mid, aname, aid, content, embeds_json in rows:
                     files = _load_attachments(conn, mid, source_gid)
                     embeds = _load_embeds(embeds_json)
                     if not content and not files and not embeds:
+                        continue
+                    if skip > 0:                 # already in the target from a prior run
+                        skip -= 1
                         continue
                     avatar = (members.get(aid) or {}).get("avatar_url")
                     try:
