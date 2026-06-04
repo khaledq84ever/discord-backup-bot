@@ -467,6 +467,26 @@ def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
     if not done and p.current_channel:
         e.add_field(name="🔄 Now archiving",
                     value=f"#{_clean_channel_name(p.current_channel)}", inline=False)
+    # LOUD warning when channels were skipped — this is THE reason a backup comes
+    # out incomplete (e.g. "only 207 messages"). Show the count + the 1-click admin
+    # link so the user fixes it instead of trusting a partial backup.
+    skipped = list(getattr(p, "skipped", []) or [])
+    if done and skipped:
+        me = guild.me
+        no_admin = bool(me and not me.guild_permissions.administrator)
+        invite = config.invite_url()
+        names = ", ".join("#" + _clean_channel_name(s) for s in skipped[:8])
+        more = f" +{len(skipped) - 8} more" if len(skipped) > 8 else ""
+        val = (f"**{len(skipped)} روم تم تخطيها — نسختك ناقصة!**\n"
+               f"**{len(skipped)} channel(s) SKIPPED — your backup is INCOMPLETE**\n"
+               f"`{names}{more}`")
+        if invite and no_admin:
+            val += (f"\n➡️ [اضغط لإعطاء البوت Administrator ثم أعد /backup]"
+                    f"({invite})\nGrant Administrator, then run /backup again.")
+        else:
+            val += ("\nأعطِ رول البوت **Administrator** ثم أعد /backup\n"
+                    "Give the bot's role **Administrator**, then re-run /backup.")
+        e.add_field(name="⚠️ رومات ناقصة / MISSING CHANNELS", value=val, inline=False)
     if done and zip_path:
         e.add_field(name="📦 Snapshot",
                     value=f"`{os.path.basename(zip_path)}` ({_fmt_size(zip_size or 0)})",
@@ -612,6 +632,58 @@ async def stats_cmd(interaction: discord.Interaction):
 
     e.set_footer(text=f"real-time · يُحدّث لحظياً · as of {s.get('updated','')}")
     await interaction.followup.send(embed=e)
+
+
+# --------------------------------------------------------------------------- #
+#  /report — copyable plain-text status (tap the code block to copy & paste here)
+# --------------------------------------------------------------------------- #
+@tree.command(name="report",
+              description="تقرير نصي للنسخ بضغطة / copyable text report (tap to copy)")
+async def report_cmd(interaction: discord.Interaction):
+    if not interaction.guild:
+        return await interaction.response.send_message("server-only.", ephemeral=True)
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    g = interaction.guild
+    me = g.me
+    admin = bool(me and me.guild_permissions.administrator)
+    text_chs = [c for c in g.channels if isinstance(c, discord.TextChannel)]
+    readable = sum(1 for c in text_chs
+                   if me and c.permissions_for(me).read_message_history)
+    unreadable = len(text_chs) - readable
+    conn = await asyncio.to_thread(storage.open_db, g.id)
+    run = await asyncio.to_thread(storage.latest_run, conn)
+    await asyncio.to_thread(conn.close)
+    size = await asyncio.to_thread(storage.dir_size, storage.guild_dir(g.id))
+    files = await asyncio.to_thread(storage.guild_file_count, g.id)
+    link = _latest_link(g.id) or "(no public domain set)"
+
+    lines = [
+        "=== BackUp Bot report ===",
+        f"server         : {g.name} ({g.id})",
+        f"bot_admin      : {'YES' if admin else 'NO  <-- GRANT ADMINISTRATOR'}",
+        f"channels_read  : {readable}/{len(text_chs)} text channels"
+        + (f"   ({unreadable} BLOCKED -> backup incomplete)" if unreadable else "   (full access)"),
+    ]
+    if run:
+        lines += [
+            f"last_backup    : {run.get('ended_at') or run.get('started_at') or '-'}",
+            f"messages       : {run.get('messages', 0)}",
+            f"attachments    : {run.get('attachments', 0)}",
+            f"downloaded     : {_fmt_size(run.get('bytes', 0) or 0)}",
+        ]
+        if run.get("error"):
+            lines.append(f"last_error     : {run['error']}")
+    else:
+        lines.append("last_backup    : NONE - run /backup first")
+    lines += [
+        f"data_files     : {files}",
+        f"on_disk        : {_fmt_size(size)}",
+        f"download_link  : {link}",
+    ]
+    body = "\n".join(lines)
+    # Fenced code block → Discord shows a one-tap "Copy" on the whole block.
+    await interaction.followup.send(
+        "📋 انسخ كل هذا وارسله / tap & copy all of this:\n```\n" + body + "\n```")
 
 
 # --------------------------------------------------------------------------- #
