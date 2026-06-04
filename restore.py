@@ -37,6 +37,13 @@ CONCURRENCY = int(os.getenv("RESTORE_CONCURRENCY", "6"))
 _TEXT_TYPES = ("text", "news")
 _VOICE_TYPES = ("voice", "stage_voice")
 
+# Channel types we can replay messages into. Voice channels have an integrated
+# text chat that supports webhooks, so their messages restore too — TextChannel
+# alone was dropping voice-channel text (e.g. #music / #Voicre chat).
+def _replayable(ch) -> bool:
+    types = (discord.TextChannel, discord.VoiceChannel)
+    return isinstance(ch, types)
+
 
 class RProgress:
     """Mutable counters for a live progress embed."""
@@ -195,7 +202,7 @@ async def restore(source_gid: int, guild: discord.Guild, *,
             conn = storage.open_db(source_gid)
             limit_sql = f"LIMIT {MSG_LIMIT}" if MSG_LIMIT > 0 else ""
             for old_cid, new_ch in chan_map.items():
-                if not isinstance(new_ch, discord.TextChannel):
+                if not _replayable(new_ch):   # text + voice (voice has text chat)
                     continue
                 # Skip channels that already have content (idempotent — no duplicates).
                 try:

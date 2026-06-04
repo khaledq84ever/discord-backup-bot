@@ -31,6 +31,24 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s  %(name)s  %(message)s")
 log = logging.getLogger("bot")
 
+# In-memory ring buffer of recent log lines, exposed via the admin API so logs
+# can be read remotely (e.g. to drive automated tests) without Railway access.
+from collections import deque as _deque
+_LOG_RING: "_deque[str]" = _deque(maxlen=3000)
+
+
+class _RingHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            _LOG_RING.append(self.format(record))
+        except Exception:
+            pass
+
+
+_ring_handler = _RingHandler()
+_ring_handler.setFormatter(logging.Formatter("%(asctime)s  %(name)s  %(levelname)s  %(message)s"))
+logging.getLogger().addHandler(_ring_handler)
+
 # Privileged intents — must be enabled in the Developer Portal too.
 intents = discord.Intents.default()
 intents.members = True           # snapshot_members
@@ -49,6 +67,11 @@ _PUBLIC_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
 # derived from the bot token so links survive restarts without extra config.
 DOWNLOAD_SECRET = (os.getenv("DOWNLOAD_SECRET", "").strip()
                    or hashlib.sha256((config.DISCORD_TOKEN or "x").encode()).hexdigest()[:24])
+# Secret that gates the remote control API (/admin/...): trigger backups/restores
+# and read logs from outside Discord (used to drive automated tests). Set
+# ADMIN_SECRET to override; falls back to a token derived from DOWNLOAD_SECRET.
+ADMIN_SECRET = (os.getenv("ADMIN_SECRET", "").strip()
+                or hashlib.sha256(("admin:" + DOWNLOAD_SECRET).encode()).hexdigest()[:32])
 _web_started = False
 _cleanup_started = False
 
@@ -150,12 +173,145 @@ async def _h_download(request):
         path, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
+# --------------------------------------------------------------------------- #
+#  Remote control API (/admin/<secret>/...) — trigger backups/restores and read
+#  logs from outside Discord, so tests can be driven programmatically. Secret-
+#  gated; returns JSON. Read endpoints are GET, actions are POST.
+# --------------------------------------------------------------------------- #
+def _admin_ok(request) -> bool:
+    return hmac.compare_digest(request.match_info.get("secret", ""), ADMIN_SECRET)
+
+
+async def _h_admin_ping(request):
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    return web.json_response({
+        "ok": True,
+        "user": str(bot.user) if bot.user else None,
+        "guilds": [{"id": g.id, "name": g.name,
+                    "admin": bool(g.me and g.me.guild_permissions.administrator)}
+                   for g in bot.guilds],
+        "in_flight": list(in_flight.keys()),
+    })
+
+
+async def _h_admin_logs(request):
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    n = int(request.query.get("n", "120"))
+    grep = request.query.get("grep", "")
+    lines = list(_LOG_RING)
+    if grep:
+        lines = [ln for ln in lines if grep.lower() in ln.lower()]
+    lines = lines[-n:]
+    if request.query.get("format") == "json":
+        return web.json_response({"lines": lines, "count": len(lines)})
+    return web.Response(text="\n".join(lines))
+
+
+async def _h_admin_stats(request):
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    return web.json_response(storage.storage_stats())
+
+
+async def _h_admin_integrity(request):
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    gid = request.query.get("guild", "")
+    if not gid.isdigit():
+        return web.json_response({"error": "guild query param required"}, status=400)
+    conn = await asyncio.to_thread(storage.open_db, int(gid))
+    run = await asyncio.to_thread(storage.latest_run, conn)
+
+    def _counts():
+        m = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        a = conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0]
+        return m, a
+    msgs, atts = await asyncio.to_thread(_counts)
+    await asyncio.to_thread(conn.close)
+    integ = _integrity_of(run) if run else None
+    return web.json_response({
+        "guild": int(gid), "total_messages": msgs, "total_attachments": atts,
+        "last_run": run, "integrity": integ,
+        "download_link": _latest_link(int(gid)),
+    })
+
+
+async def _admin_backup_task(guild: discord.Guild):
+    """Run a full backup + zip for a guild as a background task (admin-triggered)."""
+    if guild.id in in_flight:
+        return
+    p = backup.Progress()
+    in_flight[guild.id] = p
+    try:
+        log.info("admin-triggered backup starting for %s (%s)", guild.name, guild.id)
+        await backup.run_backup(guild, p)
+        await asyncio.to_thread(storage.make_zip, guild.id, "admin")
+        log.info("admin-triggered backup DONE for %s — integrity %s%%",
+                 guild.id, p.integrity().get("score"))
+    except Exception as e:  # noqa: BLE001
+        log.exception("admin backup failed for %s: %s", guild.id, e)
+    finally:
+        in_flight.pop(guild.id, None)
+
+
+async def _h_admin_backup(request):
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    gid = request.query.get("guild", "")
+    if not gid.isdigit():
+        return web.json_response({"error": "guild query param required"}, status=400)
+    guild = bot.get_guild(int(gid))
+    if guild is None:
+        return web.json_response({"error": "bot is not in that guild"}, status=404)
+    if guild.id in in_flight:
+        return web.json_response({"status": "already_running", "guild": guild.id})
+    bot.loop.create_task(_admin_backup_task(guild))
+    return web.json_response({"status": "started", "guild": guild.id,
+                              "hint": "poll /admin/<secret>/logs and /integrity"})
+
+
+async def _admin_restore_task(guild: discord.Guild, link: str, with_messages: bool):
+    log.info("admin-triggered restore starting for %s from %s", guild.id, link[:60])
+    try:
+        rp = await restore_engine.restore_from_zip(link, guild, with_messages=with_messages)
+        log.info("admin-triggered restore DONE for %s — roles=%s channels=%s msgs=%s err=%s",
+                 guild.id, rp.roles, rp.channels, rp.messages, rp.error)
+    except Exception as e:  # noqa: BLE001
+        log.exception("admin restore failed for %s: %s", guild.id, e)
+
+
+async def _h_admin_restore(request):
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    gid = request.query.get("guild", "")
+    link = request.query.get("link", "")
+    with_messages = request.query.get("messages", "1") != "0"
+    if not gid.isdigit() or not link:
+        return web.json_response({"error": "guild + link query params required"}, status=400)
+    guild = bot.get_guild(int(gid))
+    if guild is None:
+        return web.json_response({"error": "bot is not in that guild"}, status=404)
+    bot.loop.create_task(_admin_restore_task(guild, link, with_messages))
+    return web.json_response({"status": "started", "guild": guild.id,
+                              "messages": with_messages,
+                              "hint": "poll /admin/<secret>/logs"})
+
+
 async def _start_webserver():
     app = web.Application(client_max_size=0)
     app.router.add_get("/", _h_health)
     app.router.add_get("/icon.png", _h_icon)
     app.router.add_get("/latest/{token}/{gid}", _h_latest)
     app.router.add_get("/dl/{token}/{gid}/{fname}", _h_download)
+    # Remote control API (secret-gated)
+    app.router.add_get("/admin/{secret}/ping", _h_admin_ping)
+    app.router.add_get("/admin/{secret}/logs", _h_admin_logs)
+    app.router.add_get("/admin/{secret}/stats", _h_admin_stats)
+    app.router.add_get("/admin/{secret}/integrity", _h_admin_integrity)
+    app.router.add_post("/admin/{secret}/backup", _h_admin_backup)
+    app.router.add_post("/admin/{secret}/restore", _h_admin_restore)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", _PORT).start()
