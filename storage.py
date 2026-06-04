@@ -209,6 +209,24 @@ def make_zip(guild_id: int, label: str) -> str:
     return out
 
 
+def prune_all(keep: int = 1, max_age_days: Optional[float] = None) -> int:
+    """Run retention across EVERY server folder on the volume — so expired/dup
+    zips are removed even when no one hits a link or runs a new backup.
+    Returns total files removed."""
+    base = config.DATA_DIR
+    try:
+        guilds = [d for d in os.listdir(base) if d.isdigit()]
+    except OSError:
+        return 0
+    removed = 0
+    for g in guilds:
+        try:
+            removed += prune_backups(int(g), keep=keep, max_age_days=max_age_days)
+        except Exception:
+            pass
+    return removed
+
+
 def prune_backups(guild_id: int, keep: int = 1,
                   max_age_days: Optional[float] = None) -> int:
     """Enforce retention on a guild's .zip snapshots:
@@ -282,4 +300,28 @@ def storage_stats() -> dict:
     except OSError:
         used = total = 0
     return {"guilds": len(guilds), "snapshots": snapshots,
-            "used_bytes": used, "total_bytes": total}
+            "used_bytes": used, "total_bytes": total,
+            "updated": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())}
+
+
+def guild_file_count(guild_id: int) -> int:
+    """How many individual files are stored for this server (attachments + json
+    + db + zips). Cheap enough for a single guild folder."""
+    n = 0
+    for _, _, files in os.walk(guild_dir(guild_id)):
+        n += len(files)
+    return n
+
+
+def snapshot_age_seconds(guild_id: int) -> Optional[float]:
+    """Seconds since this server's newest .zip was written (None if no zip)."""
+    bdir = backups_dir(guild_id)
+    try:
+        zips = [os.path.join(bdir, f) for f in os.listdir(bdir)
+                if f.endswith(".zip")]
+    except OSError:
+        return None
+    if not zips:
+        return None
+    newest = max(zips, key=os.path.getmtime)
+    return time.time() - os.path.getmtime(newest)

@@ -30,7 +30,8 @@ AUTO_BACKUP_HOURS = int(os.getenv("AUTO_BACKUP_HOURS", "0"))
 
 # How many days a .zip snapshot is kept on the server before auto-delete.
 # Only the newest zip per guild is ever kept (duplicates are pruned).
-BACKUP_RETENTION_DAYS = float(os.getenv("BACKUP_RETENTION_DAYS", "3"))
+# Default 1 day (24h) to keep the volume small — a backup link lives ~24h.
+BACKUP_RETENTION_DAYS = float(os.getenv("BACKUP_RETENTION_DAYS", "1"))
 
 
 def invite_url() -> str:

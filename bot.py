@@ -50,6 +50,7 @@ _PUBLIC_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
 DOWNLOAD_SECRET = (os.getenv("DOWNLOAD_SECRET", "").strip()
                    or hashlib.sha256((config.DISCORD_TOKEN or "x").encode()).hexdigest()[:24])
 _web_started = False
+_cleanup_started = False
 
 
 def _guild_token(guild_id: int) -> str:
@@ -95,6 +96,7 @@ async def _h_health(request):
         f"📦 Snapshots stored:  {s['snapshots']}\n"
         f"💾 Data used:         {used_gb:.2f} GB / {total_gb:.1f} GB\n"
         f"[{bar}] {pct:.1f}%\n"
+        f"🕒 as of {s.get('updated','')}\n"
     )
     fmt = request.query.get("format", "")
     if fmt == "json" or "application/json" in request.headers.get("Accept", ""):
@@ -195,14 +197,31 @@ async def on_ready():
             log.info("bot avatar set to shield icon")
     except Exception as e:  # noqa: BLE001
         log.info("avatar set skipped: %s", e)
-    global _web_started
+    global _web_started, _cleanup_started
     if not _web_started:
         _web_started = True
         bot.loop.create_task(_start_webserver())
+    if not _cleanup_started:
+        _cleanup_started = True
+        bot.loop.create_task(_cleanup_loop())
     if config.AUTO_BACKUP_HOURS > 0:
         for g in bot.guilds:
             schedules[g.id] = config.AUTO_BACKUP_HOURS
         bot.loop.create_task(_auto_loop())
+
+
+async def _cleanup_loop():
+    """Hourly retention sweep across all servers: deletes zips older than
+    config.BACKUP_RETENTION_DAYS (24h default) + any duplicates, so the volume
+    stays small even with no link hits or new backups."""
+    while True:
+        try:
+            removed = await asyncio.to_thread(storage.prune_all)
+            if removed:
+                log.info("retention sweep removed %d expired/duplicate zip(s)", removed)
+        except Exception as e:  # noqa: BLE001
+            log.warning("cleanup loop error: %s", e)
+        await asyncio.sleep(3600)   # every hour
 
 
 WELCOME_URL = os.getenv("LANDING_URL", "https://discordbackupbot.vercel.app")
@@ -294,6 +313,20 @@ def _clean_channel_name(name: str) -> str:
     cleaned = _EMOJI_ID_RE.sub("", name or "")
     cleaned = cleaned.strip(" \t·・|┃〢-")
     return cleaned or (name or "")
+
+
+def _ago(seconds: Optional[float]) -> str:
+    """Human 'time band' since an event (e.g. '3m ago', '2h ago', '1d ago')."""
+    if seconds is None:
+        return "—"
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s ago"
+    if s < 3600:
+        return f"{s // 60}m ago"
+    if s < 86400:
+        return f"{s // 3600}h {s % 3600 // 60}m ago"
+    return f"{s // 86400}d {s % 86400 // 3600}h ago"
 
 
 def _admin_only(interaction: discord.Interaction) -> bool:
@@ -502,29 +535,65 @@ async def status_cmd(interaction: discord.Interaction):
 async def stats_cmd(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True, thinking=True)
     s = await asyncio.to_thread(storage.storage_stats)
-    used = s["used_bytes"]
-    total = s["total_bytes"]
+    used, total = s["used_bytes"], s["total_bytes"]
     pct = (used / total * 100) if total else 0
     bar_w = 20
-    filled = int(bar_w * pct / 100)
-    bar = "█" * filled + "░" * (bar_w - filled)
-    # This server's own footprint.
-    my_bytes = 0
-    if interaction.guild:
-        my_bytes = await asyncio.to_thread(
-            storage.dir_size, storage.guild_dir(interaction.guild.id))
+    bar = "█" * int(bar_w * pct / 100) + "░" * (bar_w - int(bar_w * pct / 100))
+
     e = discord.Embed(title="📊 إحصائيات مباشرة / Live stats", color=0x5865F2)
     icon = _icon_url()
     if icon:
         e.set_thumbnail(url=icon)
+
+    # ── Global (all servers) ──────────────────────────────────────────────
     e.add_field(name="📁 السيرفرات / Servers", value=f"{s['guilds']}", inline=True)
     e.add_field(name="📦 النسخ / Snapshots", value=f"{s['snapshots']}", inline=True)
-    e.add_field(name="🗂️ نسخة هذا السيرفر / This server",
-                value=_fmt_size(my_bytes), inline=True)
-    e.add_field(name="💾 البيانات / Data used",
+    e.add_field(name="🔄 يعمل الآن / Running now",
+                value=f"{len(in_flight)}", inline=True)
+    e.add_field(name="💾 إجمالي البيانات / Total data used",
                 value=f"`{bar}`\n{_fmt_size(used)} / {_fmt_size(total)} ({pct:.1f}%)",
                 inline=False)
-    e.set_footer(text="real-time · يُحدّث لحظياً")
+
+    # ── This server's own data + time band ────────────────────────────────
+    if interaction.guild:
+        gid = interaction.guild.id
+        my_bytes = await asyncio.to_thread(storage.dir_size, storage.guild_dir(gid))
+        files = await asyncio.to_thread(storage.guild_file_count, gid)
+        age = await asyncio.to_thread(storage.snapshot_age_seconds, gid)
+        conn = await asyncio.to_thread(storage.open_db, gid)
+        run = await asyncio.to_thread(storage.latest_run, conn)
+        await asyncio.to_thread(conn.close)
+
+        e.add_field(name="🗂️ حجم سيرفرك / This server",
+                    value=_fmt_size(my_bytes), inline=True)
+        e.add_field(name="📄 الملفات / Data files", value=f"{files:,}", inline=True)
+        e.add_field(name="🕒 آخر نسخة / Last backup", value=_ago(age), inline=True)
+        if run:
+            e.add_field(name="💬 الرسائل / Messages",
+                        value=f"{run['messages']:,}", inline=True)
+            e.add_field(name="📎 المرفقات / Attachments",
+                        value=f"{run['attachments']:,}", inline=True)
+        # Retention countdown — how long until this snapshot auto-deletes.
+        if age is not None:
+            left = config.BACKUP_RETENTION_DAYS * 86400 - age
+            left_txt = _ago(-left).replace(" ago", "") if left > 0 else "expired"
+            e.add_field(name="⏳ يُحذف بعد / Auto-delete in",
+                        value=(f"{left_txt}" if left > 0
+                               else "expired — run /backup"), inline=True)
+        # Live download bar if a backup is in progress for THIS server.
+        if gid in in_flight:
+            p = in_flight[gid]
+            cpct = (p.channels_done / p.channels_total * 100) if p.channels_total else 0
+            cb = "█" * int(20 * cpct / 100) + "░" * (20 - int(20 * cpct / 100))
+            e.add_field(
+                name="⬇️ تحميل مباشر / Live download",
+                value=(f"`{cb}` {cpct:.0f}%\n"
+                       f"{p.channels_done}/{p.channels_total} channels · "
+                       f"{_fmt_size(p.bytes)} · {p.messages:,} msgs · "
+                       f"#{_clean_channel_name(p.current_channel)}"),
+                inline=False)
+
+    e.set_footer(text=f"real-time · يُحدّث لحظياً · as of {s.get('updated','')}")
     await interaction.followup.send(embed=e)
 
 
