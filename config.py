@@ -20,11 +20,18 @@ DEV_GUILD_ID = os.getenv("DEV_GUILD_ID", "")
 DATA_DIR = os.getenv("DATA_DIR", "/data") if os.path.exists("/data") \
     else os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
-# Cap message scrape per channel (0 = no cap, scrape everything).
+# Cap message scrape per channel (0 = no cap, scrape EVERYTHING from the very first
+# message the server ever had). Default 0 — full history, no limit.
 MAX_MESSAGES_PER_CHANNEL = int(os.getenv("MAX_MESSAGES_PER_CHANNEL", "0"))
 
-# Skip attachments larger than this many MB (avoid eating the disk).
-MAX_ATTACHMENT_MB = int(os.getenv("MAX_ATTACHMENT_MB", "50"))
+# Skip attachments larger than this many MB (0 = no per-file size cap).
+# 500 = Discord's own largest possible attachment, so effectively no per-file limit.
+MAX_ATTACHMENT_MB = int(os.getenv("MAX_ATTACHMENT_MB", "500"))
+
+# Per-SERVER total backup size cap, in GB (0 = unlimited). Once a guild's stored data
+# reaches this, attachment downloads stop (text/messages still archived) so one huge
+# server can't fill the shared Railway volume. Messages + time are never capped.
+MAX_SERVER_BACKUP_GB = float(os.getenv("MAX_SERVER_BACKUP_GB", "5"))
 
 # Auto-backup interval in hours (0 = off).
 AUTO_BACKUP_HOURS = int(os.getenv("AUTO_BACKUP_HOURS", "0"))

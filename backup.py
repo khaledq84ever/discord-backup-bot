@@ -38,6 +38,8 @@ class Progress:
     attachments_stored: int = 0     # downloaded successfully
     attachments_failed: int = 0     # download errored (CDN expired / network)
     attachments_oversize: int = 0   # skipped — bigger than MAX_ATTACHMENT_MB
+    base_bytes: int = 0             # guild dir size on disk before this run
+    size_capped: bool = False       # hit MAX_SERVER_BACKUP_GB — stopped storing files
 
     def elapsed(self) -> float:
         return time.time() - self.started
@@ -214,8 +216,8 @@ async def _download_attachment(session: aiohttp.ClientSession,
     Returns (local_path, sha256). The same bytes posted across many
     messages/channels are stored on disk exactly once. Returns (None, None) when
     skipped (too large) or on failure."""
-    if a.size > config.MAX_ATTACHMENT_MB * 1024 * 1024:
-        return None, None
+    if config.MAX_ATTACHMENT_MB and a.size > config.MAX_ATTACHMENT_MB * 1024 * 1024:
+        return None, None   # MAX_ATTACHMENT_MB=0 means no size cap — grab everything
     dest_dir = storage.attachments_dir(guild_id)
     tmp = os.path.join(dest_dir, f"{a.id}.part")
     try:
@@ -287,11 +289,21 @@ async def _scrape_channel(channel, conn, session,
                     break
                 batch_msgs.append(_message_row(m, channel.name))
                 for a in m.attachments:
-                    local, sha = await _download_attachment(session, a, channel.guild.id)
+                    # Per-server total-size cap: once this guild's stored data reaches
+                    # MAX_SERVER_BACKUP_GB, stop downloading files (text history still
+                    # archived) so one huge server can't fill the shared volume.
+                    cap = config.MAX_SERVER_BACKUP_GB * 1024 ** 3
+                    if cap and (progress.base_bytes + progress.bytes) >= cap:
+                        progress.size_capped = True
+                        local, sha = None, None
+                    else:
+                        local, sha = await _download_attachment(session, a, channel.guild.id)
                     if local:
                         progress.bytes += a.size
                         progress.attachments_stored += 1
-                    elif a.size > config.MAX_ATTACHMENT_MB * 1024 * 1024:
+                    elif progress.size_capped:
+                        progress.attachments_oversize += 1
+                    elif config.MAX_ATTACHMENT_MB and a.size > config.MAX_ATTACHMENT_MB * 1024 * 1024:
                         progress.attachments_oversize += 1
                     else:
                         progress.attachments_failed += 1
@@ -395,6 +407,9 @@ async def run_backup(guild: discord.Guild, progress: Progress,
     conn = await asyncio.to_thread(storage.open_db, guild.id)
     run_id = await asyncio.to_thread(storage.start_run, conn)
     storage.attachments_dir(guild.id)  # ensure the dir exists before scraping
+    # Baseline on-disk size, so the per-server cap counts existing + new bytes.
+    progress.base_bytes = await asyncio.to_thread(
+        storage.dir_size, storage.guild_dir(guild.id))
 
     if specific_channel is not None:
         channels = [specific_channel]

@@ -597,13 +597,22 @@ async def _cleanup_loop():
     """Hourly retention sweep across all servers: deletes zips older than
     config.BACKUP_RETENTION_DAYS (24h default) + any duplicates, so the volume
     stays small even with no link hits or new backups."""
+    cycle = 0
     while True:
         try:
             removed = await asyncio.to_thread(storage.prune_all)
             if removed:
                 log.info("retention sweep removed %d expired/duplicate zip(s)", removed)
+            # Once a day, collapse duplicate attachment bytes fleet-wide (re-hashing
+            # the whole volume hourly would be wasteful; go-forward dedup is automatic).
+            if cycle % 24 == 0:
+                s = await asyncio.to_thread(storage.dedup_all)
+                if s.get("bytes_reclaimed"):
+                    log.info("daily dedup reclaimed %s bytes (%s files)",
+                             s["bytes_reclaimed"], s["files_removed"])
         except Exception as e:  # noqa: BLE001
             log.warning("cleanup loop error: %s", e)
+        cycle += 1
         await asyncio.sleep(3600)   # every hour
 
 
@@ -1329,15 +1338,25 @@ def _restore_embed(p, guild_name: str) -> discord.Embed:
 @tree.command(name="restore",
               description="استعد سيرفر من نسخة / Rebuild a server from a backup")
 @app_commands.describe(
-    link="رابط ملف .zip للنسخة (الأسهل) / a backup .zip download link (easiest)",
+    file="ارفع ملف نسخة .zip مباشرة / upload a backup .zip file directly",
+    link="أو رابط ملف .zip للنسخة / OR a backup .zip download link",
     source="أو ID سيرفر نسخة محفوظة / OR a saved backup's guild id (blank = here)",
     target="ID السيرفر الوجهة (فاضي = هنا) / target guild id (blank = here)",
     messages="استرجاع الرسائل أيضاً؟ بطيء / replay messages too (slow)")
 async def restore_cmd(interaction: discord.Interaction,
+                      file: Optional[discord.Attachment] = None,
                       link: Optional[str] = None,
                       source: Optional[str] = None,
                       target: Optional[str] = None,
                       messages: bool = True):
+    # An uploaded .zip is just a link — Discord hosts it at a CDN URL the restore
+    # engine can download exactly like a pasted link.
+    if file is not None and not link:
+        if not file.filename.lower().endswith(".zip"):
+            return await interaction.response.send_message(
+                "❌ لازم ملف .zip / the uploaded file must be a .zip backup.",
+                ephemeral=True)
+        link = file.url
     if not interaction.guild or not _admin_only(interaction):
         return await interaction.response.send_message(
             "⛔ Manage Server required.", ephemeral=True)
@@ -1471,10 +1490,13 @@ async def help_cmd(interaction: discord.Interaction):
             "Backups capture **everything**: channels, roles, members "
             "(incl. admins), every message, embeds, reactions, mentions, "
             "and downloaded attachments.\n\n"
-            "💡 **/copy** = انسخ كل هذا كنص / copy all of this as text."
+            "💡 **/copy** = انسخ كل هذا كنص / copy all of this as text.\n\n"
+            "👨‍💻 Programmed by **[@KhaledQ84Ever](https://x.com/KhaledQ84Ever)** · "
+            "🌐 [discordbackupbot.vercel.app](https://discordbackupbot.vercel.app)"
         ),
         color=0x5865F2,
     )
+    embed.set_footer(text="Programmed by @KhaledQ84Ever · x.com/KhaledQ84Ever")
     # Embeds aren't selectable on mobile — also send a tap-to-copy code block so
     # the full command list can be copied.
     await interaction.response.send_message(

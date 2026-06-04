@@ -26,9 +26,11 @@ import storage
 
 log = logging.getLogger("restore")
 
-# How many messages per channel to replay (0 = all). Webhook sends are slow and
-# rate-limited, so a huge server (100k+ msgs) would take many hours — cap by default.
-MSG_LIMIT = int(os.getenv("RESTORE_MSG_LIMIT", "300"))
+# How many messages per channel to replay (0 = ALL, no limit). Default 0 = full
+# clone: every message from the beginning of the channel, however long it takes
+# (hours/days are fine — the restore resumes if interrupted). Set a positive number
+# only if you deliberately want a partial/quick restore.
+MSG_LIMIT = int(os.getenv("RESTORE_MSG_LIMIT", "0"))
 SEND_DELAY = float(os.getenv("RESTORE_SEND_DELAY", "0.15"))  # 0 = fastest (discord.py self-throttles)
 # Restore this many channels at once. Discord rate-limits per-channel, so going
 # parallel is dramatically faster than one channel at a time.
@@ -360,7 +362,9 @@ async def restore_from_zip(url: str, guild: discord.Guild, *,
     base = os.path.normpath(dest)
     zpath = dest.rstrip("/") + ".zip"
     try:
-        timeout = aiohttp.ClientTimeout(total=1800)
+        # No overall cap on the backup-zip download (a 5–10+ GB zip can take a long
+        # time); only abort if the connection STALLS with no data for 5 minutes.
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=300)
         async with aiohttp.ClientSession(timeout=timeout) as sess:
             async with sess.get(url) as r:
                 if r.status != 200:
