@@ -1,206 +1,102 @@
 <div align="center">
 
-<img src="assets/promo/01-hero.png" alt="BackUp Bot — save every Discord server, forever" width="100%">
+# 🛡️ BackUp Bot
 
-# 💾 BackUp Bot — for Discord
+### Full Discord server backup &amp; **server-to-server clone** — no limits.
+### نسخ احتياطي كامل لسيرفرات ديسكورد ونسخ سيرفر إلى سيرفر — بدون حدود.
 
-**Full Discord server archival.** Channels · Roles · Members · Messages · Embeds · Reactions · Attachments · Emojis · Server metadata.
+[![Add to Discord](https://img.shields.io/badge/Add%20to-Discord-5865F2?logo=discord&logoColor=white)](https://discordbackupbot.vercel.app)
+[![Website](https://img.shields.io/badge/Website-discordbackupbot.vercel.app-E8001C)](https://discordbackupbot.vercel.app)
+[![Developer](https://img.shields.io/badge/Programmed%20by-@KhaledQ84Ever-000000?logo=x&logoColor=white)](https://x.com/KhaledQ84Ever)
 
-نسخة احتياطية كاملة لسيرفر ديسكورد — كل شي محفوظ للأبد، حماية من الحذف
-
-[![Add to Discord](https://img.shields.io/badge/Add%20to%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](#-self-host)
-[![Live site](https://img.shields.io/badge/Site-backupbot--app.vercel.app-D4A843?style=for-the-badge&logo=vercel&logoColor=white)](https://backupbot-app.vercel.app)
-[![GitHub](https://img.shields.io/badge/Source-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/khaledq84ever/discord-backup-bot)
-[![Railway](https://img.shields.io/badge/Deploy-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
+![Full server clone](assets/info/info-01-full-clone.png)
 
 </div>
 
 ---
 
-## 🛡️ Why this bot exists
+## 💡 What it does · ماذا يفعل
 
-Discord is great until somebody deletes the wrong thing. Channels vanish, members get banned, messages get nuked, attachment links **expire after a few hours**, and admins make mistakes. There's no "undo".
+**EN** — BackUp Bot archives an **entire** Discord server — every message from day one, all channels, threads &amp; forums, roles, members, emojis, server settings, and every image/file — into a private per-server vault. Then it can **rebuild that server whole onto a fresh one**: roles → categories → rooms → permissions → messages (with the original author's name &amp; avatar).
 
-**BackUp Bot fixes that.** Run `/backup` once — or schedule it with `/schedule 24` — and your entire server is captured to disk: every channel, every role with permissions, every member with their join date, every message with embeds and reactions, **and every attachment downloaded locally before Discord's CDN URL expires.**
+**ع** — بوت BackUp يحفظ سيرفرك **بالكامل** — كل رسالة من أول يوم، كل الرومات والثريدات والفورَم، الرولات، الأعضاء، الإيموجي، إعدادات السيرفر، وكل صورة وملف — في خزنة خاصة لكل سيرفر. وبعدها يقدر **ينسخ السيرفر كامل على سيرفر جديد**: الرولات ← التصنيفات ← الرومات ← الصلاحيات ← الرسائل (باسم وصورة صاحب الرسالة الأصلي).
 
-Your data, your disk, your rules.
-
----
-
-## 📦 What gets backed up
-
-<div align="center">
-<img src="assets/promo/02-what-it-saves.png" alt="Every part of your server — captured" width="100%">
-</div>
-
-| Category | What's captured |
-|---|---|
-| **🏠 Server metadata** | Name, icon, banner, owner, features, locale, verification level, AFK settings, vanity URL |
-| **📁 Channels** | Every text / voice / thread / forum — topic, position, NSFW flag, slowmode, bitrate, per-role permission overwrites |
-| **🎭 Roles** | Permissions bitfield, color, hoist, mentionable, position, role icon, full member list |
-| **👥 Members** | Username, global name, nick, avatar URL, join date, role assignments, admin flag, premium-since |
-| **💬 Messages** | Full content, embeds (JSON), reactions, mentions, replies, edits, pins, timestamps, message type |
-| **📎 Attachments** | **Downloaded to disk** — images, videos, audio, files. URL + size + content-type indexed in SQLite |
-| **😀 Emojis** | Every custom emoji with its URL and metadata |
-
-Everything is stored in a **per-guild folder** with a SQLite DB for messages and JSON files for metadata. Trivially queryable, searchable, and restorable from.
+> 🔁 سيرفرك الأصلي يبقى فيه كل بياناته · سيرفرك الجديد ينتعبّى من أول رسالة.
+> *Your source server keeps all its data; the new one is filled from the very first message.*
 
 ---
 
-## ⚡ Slash commands
+## ♾️ No limits · بدون حدود
 
-<div align="center">
-<img src="assets/promo/03-commands.png" alt="7 slash commands" width="100%">
-</div>
+![No limits](assets/info/info-02-no-limits.png)
 
-| Command | What it does |
-|---|---|
-| `/backup` | Run a full backup of this server (incremental — resumes from where the last run left off) |
-| `/backup_channel <channel>` | Back up just one channel |
-| `/status` | Show last backup time, message count, attachment count, on-disk size |
-| `/download` | Send the latest `.zip` snapshot as an ephemeral file (or point at the path if > 25 MB) |
-| `/schedule <hours>` | Auto-run `/backup` every N hours (0 disables) |
-| `/search <query>` | Search every archived message for a keyword |
-| `/help` | Show all commands |
+| EN | ع | |
+|---|---|---|
+| **Messages** — unlimited, from day one | **الرسائل** — بلا حد، من أول يوم | ♾️ |
+| **Time** — hours/days, **resumes if interrupted** | **الوقت** — ساعات/أيام، **يكمل لو انقطع** | ⏱️ |
+| **Size** — up to **5 GB per server** | **الحجم** — لين **5 جيجا للسيرفر** | 💾 |
+| **Files** — images &amp; files up to Discord's max | **الملفات** — صور وملفات لأقصى حد بديسكورد | 🖼️ |
 
-All commands require **Manage Server** to run.
+**EN** — If a restore is interrupted, just run it again — it counts what already landed and **continues from the exact cut-off**, never duplicating.
+**ع** — لو توقّف الاسترجاع، شغّله مرة ثانية — يحسب اللي انحفظ و**يكمّل من نفس النقطة** بدون تكرار.
 
 ---
 
-## 📊 Live progress
+## 🧩 How it works · كيف يشتغل
 
-The `/backup` embed updates every 5 seconds while a backup runs — channels done, messages saved, attachments downloaded, bytes pulled, elapsed time:
+![Architecture](assets/info/info-03-architecture.png)
 
-<div align="center">
-<img src="assets/promo/04-progress.png" alt="Live progress embed" width="100%">
-</div>
-
-When it finishes you get a 📦 snapshot field with the `.zip` filename and size. Run `/download` to pull it.
-
----
-
-## 🚀 Self-host
-
-<div align="center">
-<img src="assets/promo/05-cta.png" alt="Protect your server" width="100%">
-</div>
-
-### 1. Create a Discord app
-
-→ https://discord.com/developers/applications
-
-- **Bot → Reset Token** → copy the token
-- **General Information** → copy the **Application ID**
-- **Bot → Privileged Gateway Intents** — enable BOTH:
-  - ✅ `SERVER MEMBERS INTENT` (needed to snapshot the member list)
-  - ✅ `MESSAGE CONTENT INTENT` (needed to archive message text)
-
-### 2. Configure
-
-```bash
-git clone https://github.com/khaledq84ever/discord-backup-bot.git
-cd discord-backup-bot
-cp .env.example .env
-# fill in DISCORD_TOKEN and APPLICATION_ID
-```
-
-### 3. Deploy to Railway
-
-```bash
-railway init -n discord-backup-bot
-railway volume add /data            # persistent backup storage
-railway up --detach
-```
-
-Or run locally:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python3 bot.py
-```
+- **Backup engine / محرّك النسخ** — text/voice/news + active &amp; archived threads + forum posts; downloads attachments before the CDN expires; off-loop DB writes so the gateway never freezes. / يسحب كل أنواع الرومات والثريدات والفورَم، وينزّل المرفقات قبل ما تنتهي روابطها، وبدون تجميد.
+- **Per-server store / تخزين لكل سيرفر** — `DATA_DIR/<guild_id>/` — own DB, attachments, zips; identical files stored once (sha256). / لكل سيرفر مجلده الخاص، والملفات المتطابقة تُخزّن مرة وحدة.
+- **Restore engine / محرّك الاسترجاع** — rebuilds in order, replays via webhooks, **resumes** partial channels, idempotent. / يعيد البناء بالترتيب، ويكمل الرومات الناقصة، وما يكرّر.
+- **Remote control API** — drive backups/restores &amp; read the console from outside Discord.
 
 ---
 
-## 📂 Project layout
+## ✅ Per-room verification · تحقّق لكل روم
 
-```
-discord-backup-bot/
-├── bot.py            # 7 slash commands
-├── backup.py         # scrape channels/messages/roles/members + attachment download
-├── storage.py        # SQLite schema + filesystem layout per guild
-├── config.py         # env-driven config
-├── requirements.txt  # discord.py + aiohttp + python-dotenv
-├── Dockerfile        # Python 3.12-slim
-├── railway.json      # worker service config
-├── web/              # Arabic-first landing page (white bg, black bold)
-│   ├── index.html
-│   ├── Dockerfile
-│   └── railway.json
-├── assets/
-│   ├── fonts/        # Inter + Tajawal (Arabic shaping via libraqm)
-│   ├── make_promo.py # 5 vector-drawn README images
-│   └── promo/        # generated PNGs (01-hero … 05-cta)
-└── data/             # gitignored, mounted /data on Railway
-    └── <guild_id>/
-        ├── guild.json
-        ├── channels.json
-        ├── roles.json
-        ├── members.json
-        ├── emojis.json
-        ├── backup.db          # SQLite with every message
-        ├── attachments/       # downloaded files
-        ├── backups/           # .zip snapshots
-        └── last_backup.json
-```
+![Per-room verify](assets/info/info-04-verify.png)
+
+**EN** — After a clone, `verify_clone` compares source vs target **room-by-room** — every channel reported `full` / `partial` / `missing` with message counts.
+**ع** — بعد النسخ، أداة `verify_clone` تقارن المصدر بالهدف **روم روم** — كل روم تطلع `كامل` / `ناقص` / `مفقود` مع عدد الرسائل.
 
 ---
 
-## 🧱 Storage schema
+## ⌨️ Commands · الأوامر
 
-**`messages`** (one row per message)
-```sql
-id, channel_id, channel_name, author_id, author_name, content,
-created_at, edited_at, reply_to, pinned, type,
-embeds_json, reactions_json, mentions_json
-```
+![Commands](assets/info/info-05-control.png)
 
-**`attachments`** (one row per file)
-```sql
-id, message_id, channel_id, filename, url, size, local_path, content_type
-```
-
-**`backup_runs`** (one row per `/backup` invocation)
-```sql
-id, started_at, ended_at, channels, messages, attachments, bytes, error
-```
-
-Query with `sqlite3 data/<guild_id>/backup.db` or build a viewer.
+| Command | EN | ع |
+|---|---|---|
+| `/backup` | Full server backup | نسخة كاملة للسيرفر |
+| `/download` | Private download link | رابط تحميل خاص |
+| `/restore` | Restore/clone — **link or uploaded `.zip`** | استرجاع/نسخ — **رابط أو ملف** |
+| `/status` · `/stats` | Backup status &amp; storage | حالة النسخة والتخزين |
+| `/search` | Search saved messages | بحث بالرسائل المحفوظة |
+| `/schedule` | Automatic backups | نسخ تلقائي |
+| `/dedup` | Reclaim duplicate disk | تنظيف الملفات المكررة |
+| `/report` · `/copy` · `/help` | Copy-friendly status &amp; commands | نسخ الحالة والأوامر |
 
 ---
 
-## ⚠️ Notes &amp; limits
+## 🔒 Privacy &amp; isolation · الخصوصية والعزل
 
-- **Discord rate limits** apply to message history scraping. A large channel takes minutes, not seconds. The scrape is async, fully resumable, and writes in batches of 200 so progress survives restarts.
-- **Attachment expiry.** Discord CDN URLs now contain signed expiries. BackUp Bot downloads files **immediately** during the scrape, before they go stale. Re-running `/backup` will fetch any new attachments since last run.
-- **Bot needs read access** to every channel you want backed up. Make sure its role has `View Channel` + `Read Message History` everywhere.
-- **No restoration** — yet. The export format is rich enough to restore from (e.g. via webhooks) but Discord doesn't let bots recreate users or message authorship, so a real restore is approximate. The data is yours; do what you want with it.
-- **Disk space.** Mount `/data` to a Railway volume (or any persistent storage) — large servers can produce gigabytes once attachments are downloaded.
+**EN** — Every server is a **sealed vault**: files live under that server's own folder, dedup runs *within* a server only, and each download link is an HMAC token bound to that server's ID — one link **cannot** be tampered/guessed to reach another server's backup.
 
----
+**ع** — كل سيرفر **خزنة مقفلة**: ملفاته في مجلده الخاص، والتنظيف يصير داخل السيرفر نفسه فقط، وكل رابط تحميل مربوط بـID السيرفر — ما يمكن تعديله أو تخمينه للوصول لنسخة سيرفر ثاني.
 
-## 📜 License
+## 🧹 Automatic storage hygiene · تنظيف تلقائي للتخزين
 
-MIT — do whatever you want.
+- **3-day retention** — old zips auto-deleted / النسخ القديمة تُحذف بعد ٣ أيام
+- **Keep newest only** — one zip per server / نسخة وحدة لكل سيرفر
+- **Daily dedup** — duplicate bytes collapsed / دمج الملفات المكررة يومياً
 
 ---
 
 <div align="center">
 
-**One of three bots in the family** — [AI chat](https://github.com/khaledq84ever/discord-ai-bot) · [Music player](https://github.com/khaledq84ever/discord-music-bot) · BackUp Bot
+🌐 **[discordbackupbot.vercel.app](https://discordbackupbot.vercel.app)** · 💻 Programmed by **[@KhaledQ84Ever](https://x.com/KhaledQ84Ever)**
 
-[Live site](https://backupbot-app.vercel.app) · [@KhaledQ84Ever](https://x.com/KhaledQ84Ever)
+**[github.com/khaledq84ever/discord-backup-bot](https://github.com/khaledq84ever/discord-backup-bot)**
 
 </div>
