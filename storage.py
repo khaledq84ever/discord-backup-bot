@@ -251,3 +251,35 @@ def dir_size(path: str) -> int:
             except OSError:
                 pass
     return total
+
+
+import shutil
+
+
+def storage_stats() -> dict:
+    """Fast, real-time storage numbers across ALL backed-up servers:
+      guilds     — how many server folders exist (one per Discord server)
+      snapshots  — total .zip backups currently stored
+      used_bytes — disk used on the volume (≈ all backup data)
+      total_bytes— volume capacity
+    Cheap: lists folders + one statvfs, no full tree walk."""
+    base = config.DATA_DIR
+    try:
+        guilds = [d for d in os.listdir(base)
+                  if d.isdigit() and os.path.isdir(os.path.join(base, d))]
+    except OSError:
+        guilds = []
+    snapshots = 0
+    for g in guilds:
+        bd = os.path.join(base, g, "backups")
+        try:
+            snapshots += sum(1 for f in os.listdir(bd) if f.endswith(".zip"))
+        except OSError:
+            pass
+    try:
+        du = shutil.disk_usage(base)
+        used, total = du.used, du.total
+    except OSError:
+        used = total = 0
+    return {"guilds": len(guilds), "snapshots": snapshots,
+            "used_bytes": used, "total_bytes": total}

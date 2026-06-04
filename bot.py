@@ -80,7 +80,26 @@ def _icon_url() -> Optional[str]:
 
 
 async def _h_health(request):
-    return web.Response(text="BackUp Bot — OK")
+    """Live status page: real-time server-folder count + stored data size."""
+    s = storage.storage_stats()
+    used_gb = s["used_bytes"] / 1024**3
+    total_gb = s["total_bytes"] / 1024**3
+    pct = (s["used_bytes"] / s["total_bytes"] * 100) if s["total_bytes"] else 0
+    bar_w = 24
+    filled = int(bar_w * pct / 100)
+    bar = "█" * filled + "░" * (bar_w - filled)
+    body = (
+        "BackUp Bot — OK\n"
+        "──────────────────────────────\n"
+        f"📁 Servers (folders): {s['guilds']}\n"
+        f"📦 Snapshots stored:  {s['snapshots']}\n"
+        f"💾 Data used:         {used_gb:.2f} GB / {total_gb:.1f} GB\n"
+        f"[{bar}] {pct:.1f}%\n"
+    )
+    fmt = request.query.get("format", "")
+    if fmt == "json" or "application/json" in request.headers.get("Accept", ""):
+        return web.json_response(s)
+    return web.Response(text=body)
 
 
 async def _h_icon(request):
@@ -473,6 +492,40 @@ async def status_cmd(interaction: discord.Interaction):
                     value=link, inline=False)
     e.set_footer(text="رابط خاص بسيرفرك · private to this server · or use /download")
     await interaction.response.send_message(embed=e, ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /stats — real-time storage numbers (servers + data) across all backups
+# --------------------------------------------------------------------------- #
+@tree.command(name="stats",
+              description="إحصائيات مباشرة / Live storage stats (servers + data)")
+async def stats_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    s = await asyncio.to_thread(storage.storage_stats)
+    used = s["used_bytes"]
+    total = s["total_bytes"]
+    pct = (used / total * 100) if total else 0
+    bar_w = 20
+    filled = int(bar_w * pct / 100)
+    bar = "█" * filled + "░" * (bar_w - filled)
+    # This server's own footprint.
+    my_bytes = 0
+    if interaction.guild:
+        my_bytes = await asyncio.to_thread(
+            storage.dir_size, storage.guild_dir(interaction.guild.id))
+    e = discord.Embed(title="📊 إحصائيات مباشرة / Live stats", color=0x5865F2)
+    icon = _icon_url()
+    if icon:
+        e.set_thumbnail(url=icon)
+    e.add_field(name="📁 السيرفرات / Servers", value=f"{s['guilds']}", inline=True)
+    e.add_field(name="📦 النسخ / Snapshots", value=f"{s['snapshots']}", inline=True)
+    e.add_field(name="🗂️ نسخة هذا السيرفر / This server",
+                value=_fmt_size(my_bytes), inline=True)
+    e.add_field(name="💾 البيانات / Data used",
+                value=f"`{bar}`\n{_fmt_size(used)} / {_fmt_size(total)} ({pct:.1f}%)",
+                inline=False)
+    e.set_footer(text="real-time · يُحدّث لحظياً")
+    await interaction.followup.send(embed=e)
 
 
 # --------------------------------------------------------------------------- #
