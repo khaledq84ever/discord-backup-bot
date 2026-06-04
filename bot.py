@@ -639,6 +639,56 @@ async def stats_cmd(interaction: discord.Interaction):
 
 
 # --------------------------------------------------------------------------- #
+#  /dedup — reclaim disk by collapsing duplicate attachments (sha256)
+# --------------------------------------------------------------------------- #
+@tree.command(name="dedup",
+              description="توفير مساحة: حذف المرفقات المكررة / reclaim space (dedup attachments)")
+@app_commands.describe(
+    all_servers="نظّف كل السيرفرات (مالك البوت) / dedup ALL servers (owner only)")
+async def dedup_cmd(interaction: discord.Interaction, all_servers: bool = False):
+    if not interaction.guild and not all_servers:
+        return await interaction.response.send_message(
+            "هذا الأمر داخل السيرفر فقط / server-only command.", ephemeral=True)
+    if not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ تحتاج صلاحية Manage Server / you need Manage Server.", ephemeral=True)
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    if all_servers:
+        # Only the bot's application owner may sweep every server's data.
+        app = await bot.application_info()
+        if not (app.owner and interaction.user.id == app.owner.id):
+            return await interaction.followup.send(
+                "⛔ لمالك البوت فقط / bot owner only.", ephemeral=True)
+        s = await asyncio.to_thread(storage.dedup_all)
+        e = discord.Embed(
+            title="🧹 توفير المساحة / Dedup complete (all servers)",
+            color=0x57F287)
+        e.add_field(name="📁 السيرفرات / Servers", value=f"{s['guilds']}", inline=True)
+        e.add_field(name="🗑️ ملفات محذوفة / Files removed",
+                    value=f"{s['files_removed']:,}", inline=True)
+        e.add_field(name="💾 مساحة مُستردة / Space reclaimed",
+                    value=f"**{_fmt_size(s['bytes_reclaimed'])}**", inline=False)
+    else:
+        gid = interaction.guild.id
+        s = await asyncio.to_thread(storage.dedup_attachments, gid)
+        e = discord.Embed(title="🧹 توفير المساحة / Dedup complete", color=0x57F287)
+        e.add_field(name="📄 ملفات قبل / Files before",
+                    value=f"{s['files_before']:,}", inline=True)
+        e.add_field(name="📄 ملفات بعد / Files after",
+                    value=f"{s['files_after']:,}", inline=True)
+        e.add_field(name="🔑 ملفات فريدة / Unique files",
+                    value=f"{s['unique']:,}", inline=True)
+        e.add_field(name="💾 مساحة مُستردة / Space reclaimed",
+                    value=f"**{_fmt_size(s['bytes_reclaimed'])}**", inline=False)
+    icon = _icon_url()
+    if icon:
+        e.set_thumbnail(url=icon)
+    e.set_footer(text="المرفقات المكررة تُخزَّن مرة واحدة / duplicate attachments now stored once")
+    await interaction.followup.send(embed=e)
+
+
+# --------------------------------------------------------------------------- #
 #  /report — copyable plain-text status (tap the code block to copy & paste here)
 # --------------------------------------------------------------------------- #
 @tree.command(name="report",

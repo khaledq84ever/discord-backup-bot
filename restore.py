@@ -271,12 +271,19 @@ def _load_attachments(conn, message_id: int, source_gid: int) -> list:
     except Exception:
         return files
     adir = storage.attachments_dir(source_gid)
+    gdir = storage.guild_dir(source_gid)
     for filename, local_path in rows:
-        # Try the stored path, then fall back to <source>/attachments/<basename>
-        # (covers backups restored from a downloaded .zip, where absolute paths differ).
+        # Try the stored path, then fall back to reconstructing it under the source
+        # guild dir (covers backups restored from a downloaded .zip, where absolute
+        # paths differ, AND the content-addressed attachments/sha/<aa>/<sha> layout).
         candidates = []
         if local_path:
             candidates.append(local_path)
+            # Reconstruct the "attachments/..." tail under this source's guild dir.
+            norm = local_path.replace("\\", "/")
+            if "attachments/" in norm:
+                tail = norm[norm.index("attachments/"):]
+                candidates.append(os.path.join(gdir, tail))
             candidates.append(os.path.join(adir, os.path.basename(local_path)))
         path = next((c for c in candidates if c and os.path.isfile(c)), None)
         if path and os.path.getsize(path) < 8 * 1024 * 1024:

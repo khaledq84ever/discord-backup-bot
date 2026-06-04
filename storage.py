@@ -12,6 +12,7 @@ Layout (under config.DATA_DIR):
     backups/           — periodic .zip snapshots
     last_backup.json   — pointer to latest snapshot + counters
 """
+import hashlib
 import json
 import os
 import sqlite3
@@ -38,6 +39,144 @@ def backups_dir(guild_id: int) -> str:
     p = os.path.join(guild_dir(guild_id), "backups")
     os.makedirs(p, exist_ok=True)
     return p
+
+
+# --------------------------------------------------------------------------- #
+#  Content-addressed attachment store (sha256 dedup)
+# --------------------------------------------------------------------------- #
+#  Files are stored by their content hash under attachments/sha/<aa>/<sha256><ext>
+#  so the SAME bytes (a reposted image, repeated sticker, shared meme) live on
+#  disk exactly once even when posted across many messages/channels.
+def content_path(guild_id: int, sha256: str, filename: str = "") -> str:
+    """Where an attachment with this content hash is stored on disk.
+
+    Sharded by the first 2 hex chars to avoid one huge flat directory. The
+    original extension is preserved so the file is still openable/serveable."""
+    ext = os.path.splitext(filename or "")[1][:16]
+    sub = os.path.join(attachments_dir(guild_id), "sha", sha256[:2])
+    os.makedirs(sub, exist_ok=True)
+    return os.path.join(sub, f"{sha256}{ext}")
+
+
+def _hash_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def dedup_attachments(guild_id: int) -> dict:
+    """One-time / repeatable migration: collapse duplicate attachment files into
+    the content-addressed store and reclaim disk.
+
+    Walks every file already in attachments/ (the old flat <id>-<name> layout AND
+    any already-hashed files), hashes it, and keeps exactly ONE copy per unique
+    sha256 under attachments/sha/<aa>/<sha><ext>. Duplicates are deleted. The DB's
+    attachments.local_path + sha256 are rewritten to point at the kept copy.
+
+    Safe & idempotent: re-running does nothing once everything is deduped. Returns
+    stats: files_before, files_after, bytes_reclaimed, unique."""
+    adir = attachments_dir(guild_id)
+    sha_root = os.path.join(adir, "sha")
+    # path-on-disk -> sha256, computed once.
+    file_hash: dict = {}
+    files_before = 0
+    for root, _, files in os.walk(adir):
+        for name in files:
+            fp = os.path.join(root, name)
+            if fp.endswith(".part"):
+                try:
+                    os.remove(fp)
+                except OSError:
+                    pass
+                continue
+            files_before += 1
+            try:
+                file_hash[fp] = _hash_file(fp)
+            except OSError:
+                pass
+
+    reclaimed = 0
+    # old absolute path -> new canonical path, to rewrite the DB afterwards.
+    remap: dict = {}
+    seen_basenames: dict = {}  # sha -> kept canonical path
+    for fp, sha in sorted(file_hash.items()):
+        # Derive a filename (for the extension) from the existing name.
+        base = os.path.basename(fp)
+        # old flat layout was "<id>-<filename>"; recover the original name part.
+        orig = base.split("-", 1)[1] if "-" in base and not fp.startswith(sha_root) else base
+        target = content_path(guild_id, sha, orig)
+        if os.path.abspath(fp) == os.path.abspath(target):
+            seen_basenames.setdefault(sha, target)
+            continue  # already canonical
+        if sha in seen_basenames or os.path.exists(target):
+            # duplicate content — drop this copy, point it at the canonical file.
+            try:
+                size = os.path.getsize(fp)
+                os.remove(fp)
+                reclaimed += size
+            except OSError:
+                size = 0
+            remap[fp] = seen_basenames.get(sha, target)
+        else:
+            try:
+                os.replace(fp, target)
+                remap[fp] = target
+                seen_basenames[sha] = target
+            except OSError:
+                pass
+
+    # Rewrite DB local_path + sha256 so restore finds the canonical files.
+    conn = open_db(guild_id)
+    try:
+        rows = conn.execute(
+            "SELECT id, local_path FROM attachments WHERE local_path IS NOT NULL"
+        ).fetchall()
+        for aid, lp in rows:
+            new_lp = remap.get(lp)
+            sha = None
+            if new_lp:
+                sha = _sha_from_path(new_lp)
+            elif lp and os.path.isfile(lp) and lp.startswith(sha_root):
+                new_lp, sha = lp, _sha_from_path(lp)
+            if new_lp:
+                conn.execute(
+                    "UPDATE attachments SET local_path = ?, sha256 = ? WHERE id = ?",
+                    (new_lp, sha, aid))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Clean up now-empty old subdirs (best effort).
+    files_after = sum(len(fs) for _, _, fs in os.walk(adir))
+    return {"files_before": files_before, "files_after": files_after,
+            "bytes_reclaimed": reclaimed, "unique": len(seen_basenames)}
+
+
+def _sha_from_path(path: str) -> Optional[str]:
+    """Extract the sha256 from a content-addressed path (the filename stem)."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return stem if len(stem) == 64 and all(c in "0123456789abcdef" for c in stem) else None
+
+
+def dedup_all() -> dict:
+    """Run sha256 dedup across EVERY backed-up server. Returns aggregate stats."""
+    base = config.DATA_DIR
+    try:
+        guilds = [int(d) for d in os.listdir(base) if d.isdigit()]
+    except OSError:
+        return {"guilds": 0, "bytes_reclaimed": 0, "files_removed": 0}
+    total_reclaimed = files_removed = 0
+    for g in guilds:
+        try:
+            s = dedup_attachments(g)
+            total_reclaimed += s["bytes_reclaimed"]
+            files_removed += max(0, s["files_before"] - s["files_after"])
+        except Exception:
+            pass
+    return {"guilds": len(guilds), "bytes_reclaimed": total_reclaimed,
+            "files_removed": files_removed}
 
 
 def write_json(guild_id: int, name: str, data) -> None:
@@ -71,6 +210,12 @@ def open_db(guild_id: int) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(SCHEMA)
+    # Migration: add sha256 to attachments tables created before content-hash dedup.
+    try:
+        conn.execute("ALTER TABLE attachments ADD COLUMN sha256 TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
     return conn
 
 
@@ -103,9 +248,11 @@ CREATE TABLE IF NOT EXISTS attachments (
     url        TEXT,
     size       INTEGER,
     local_path TEXT,
-    content_type TEXT
+    content_type TEXT,
+    sha256     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_sha    ON attachments(sha256);
 
 CREATE TABLE IF NOT EXISTS backup_runs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,11 +289,13 @@ def upsert_message(conn: sqlite3.Connection, row: dict) -> None:
 
 
 def upsert_attachment(conn: sqlite3.Connection, row: dict) -> None:
+    row = {"sha256": None, **row}  # sha256 optional for older callers
     conn.execute(
         """INSERT OR REPLACE INTO attachments
-           (id, message_id, channel_id, filename, url, size, local_path, content_type)
+           (id, message_id, channel_id, filename, url, size, local_path,
+            content_type, sha256)
            VALUES (:id, :message_id, :channel_id, :filename, :url, :size,
-                   :local_path, :content_type)""",
+                   :local_path, :content_type, :sha256)""",
         row,
     )
 

@@ -7,6 +7,7 @@ per channel via storage.newest_message_id.
 """
 import asyncio
 import json
+import hashlib
 import logging
 import os
 import time
@@ -175,28 +176,39 @@ def _message_row(m: discord.Message, channel_name: str) -> dict:
 
 
 async def _download_attachment(session: aiohttp.ClientSession,
-                                 a: discord.Attachment, dest_dir: str
-                                 ) -> Optional[str]:
-    """Download to <dest_dir>/<message_id>-<filename>. Returns local path."""
+                                 a: discord.Attachment, guild_id: int
+                                 ) -> tuple:
+    """Download an attachment into the content-addressed store and dedup by sha256.
+
+    Returns (local_path, sha256). The same bytes posted across many
+    messages/channels are stored on disk exactly once. Returns (None, None) when
+    skipped (too large) or on failure."""
     if a.size > config.MAX_ATTACHMENT_MB * 1024 * 1024:
-        return None
-    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in a.filename)
-    fname = f"{a.id}-{safe_name}"
-    out = os.path.join(dest_dir, fname)
-    if os.path.exists(out) and os.path.getsize(out) == a.size:
-        return out  # already downloaded
+        return None, None
+    dest_dir = storage.attachments_dir(guild_id)
+    tmp = os.path.join(dest_dir, f"{a.id}.part")
     try:
+        h = hashlib.sha256()
         async with session.get(a.url) as r:
             r.raise_for_status()
-            tmp = out + ".part"
             with open(tmp, "wb") as f:
                 async for chunk in r.content.iter_chunked(1 << 16):
                     f.write(chunk)
+                    h.update(chunk)
+        sha = h.hexdigest()
+        out = storage.content_path(guild_id, sha, a.filename)
+        if os.path.exists(out) and os.path.getsize(out) > 0:
+            os.remove(tmp)            # dedup: identical bytes already stored
+        else:
             os.replace(tmp, out)
-        return out
+        return out, sha
     except Exception as e:
         log.warning("attachment %s download failed: %s", a.filename, e)
-        return None
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return None, None
 
 
 def _flush_batch(conn, batch_msgs, batch_atts) -> None:
@@ -215,7 +227,7 @@ _RESUMABLE = (discord.HTTPException, discord.DiscordServerError,
               aiohttp.ClientError, asyncio.TimeoutError, ConnectionError, OSError)
 
 
-async def _scrape_channel(channel, conn, session, attachments_dir,
+async def _scrape_channel(channel, conn, session,
                           progress: Progress) -> None:
     """Pull EVERY message we don't already have (day 1 -> now), download attachments.
 
@@ -244,7 +256,7 @@ async def _scrape_channel(channel, conn, session, attachments_dir,
                     break
                 batch_msgs.append(_message_row(m, channel.name))
                 for a in m.attachments:
-                    local = await _download_attachment(session, a, attachments_dir)
+                    local, sha = await _download_attachment(session, a, channel.guild.id)
                     if local:
                         progress.bytes += a.size
                     batch_atts.append({
@@ -256,6 +268,7 @@ async def _scrape_channel(channel, conn, session, attachments_dir,
                         "size":       a.size,
                         "local_path": local,
                         "content_type": a.content_type,
+                        "sha256":     sha,
                     })
                     progress.attachments += 1
                 total_new += 1
@@ -338,7 +351,7 @@ async def run_backup(guild: discord.Guild, progress: Progress,
 
     conn = storage.open_db(guild.id)
     run_id = storage.start_run(conn)
-    atts_dir = storage.attachments_dir(guild.id)
+    storage.attachments_dir(guild.id)  # ensure the dir exists before scraping
 
     if specific_channel is not None:
         channels = [specific_channel]
@@ -352,7 +365,7 @@ async def run_backup(guild: discord.Guild, progress: Progress,
             if progress.cancelled:
                 break
             try:
-                await _scrape_channel(ch, conn, session, atts_dir, progress)
+                await _scrape_channel(ch, conn, session, progress)
             except Exception as e:
                 log.warning("channel %s failed: %s", getattr(ch, "name", "?"), e)
             progress.channels_done += 1
