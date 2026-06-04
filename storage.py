@@ -211,11 +211,20 @@ def open_db(guild_id: int) -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(SCHEMA)
     # Migration: add sha256 to attachments tables created before content-hash dedup.
+    # MUST run before any index on sha256 (executescript above no longer references
+    # the column, so an old DB without it doesn't break on open).
     try:
         conn.execute("ALTER TABLE attachments ADD COLUMN sha256 TEXT")
         conn.commit()
     except sqlite3.OperationalError:
         pass  # column already exists
+    # Now the column is guaranteed to exist — safe to index it.
+    try:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_attachments_sha ON attachments(sha256)")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     return conn
 
 
@@ -252,7 +261,6 @@ CREATE TABLE IF NOT EXISTS attachments (
     sha256     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
-CREATE INDEX IF NOT EXISTS idx_attachments_sha    ON attachments(sha256);
 
 CREATE TABLE IF NOT EXISTS backup_runs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
