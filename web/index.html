@@ -619,8 +619,10 @@
   // ── One-click invite. Users NEVER enter a token — they just pick their server. ──
   // Paste the BackUp Bot's public Application ID here (Developer Portal → General Information).
   const CLIENT_ID = "1509128697129734285";  // BackUp Bot Application ID
-  // View + Read History + Send + Embed + Attach + Manage Webhooks (archival + /download + /status)
-  const PERMISSIONS = "536988288";
+  // Administrator — required so the bot can READ EVERY channel (full backup, no "blocked"
+  // channels) and CREATE channels/roles on /restore. The old 536988288 set under-granted
+  // and left private channels unreadable on most servers.
+  const PERMISSIONS = "8";
   function inviteUrl(){
     return `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}`
       + `&permissions=${PERMISSIONS}&scope=bot%20applications.commands`;

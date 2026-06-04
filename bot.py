@@ -397,6 +397,32 @@ async def _h_admin_cmd(request):
         lines = [ln for ln in _LOG_RING if grep.lower() in ln.lower()] if grep else list(_LOG_RING)
         return web.json_response({"lines": lines[-n:]})
 
+    if do == "scan":
+        # Classify the console into the failure modes that matter so a freeze /
+        # truncated backup / failed restore can be spotted in ONE call.
+        ring = list(_LOG_RING)
+        sigs = {
+            "freeze":           ("heartbeat blocked", "blocked for more than",
+                                 "has stopped responding"),
+            "resume_retry":     ("interrupted", "resuming", "retry", "backoff"),
+            "blocked_channels": ("no access", "skipping", "Forbidden"),
+            "restore_done":     ("restore DONE",),
+            "restore_failed":   ("restore failed",),
+            "backup_done":      ("backup DONE",),
+            "exceptions":       ("Traceback", "Exception", " ERROR "),
+        }
+        out = {}
+        for name, needles in sigs.items():
+            hits = [ln for ln in ring
+                    if any(nd.lower() in ln.lower() for nd in needles)]
+            out[name] = {"count": len(hits), "last": hits[-1] if hits else None}
+        # crude freeze verdict: any freeze line that has no later "backup DONE"
+        verdict = "FROZEN?" if out["freeze"]["count"] and (
+            not out["backup_done"]["last"]
+            or out["freeze"]["last"] > out["backup_done"]["last"]) else "ok"
+        return web.json_response({"verdict": verdict, "signals": out,
+                                  "ring_lines": len(ring)})
+
     if do == "integrity_all":
         out = []
         for g in bot.guilds:
