@@ -334,6 +334,120 @@ async def _h_admin_backup_all(request):
                               "hint": "poll /admin/<secret>/logs and /integrity?guild="})
 
 
+async def _h_admin_cmd(request):
+    """Unified AI control plane — ONE secret-gated command that dispatches a curated
+    allowlist of admin actions. `?do=<action>`. Read actions are safe over GET;
+    mutating actions also accept POST. Deliberately NO arbitrary code/shell execution:
+    the secret travels in the URL (and lands in access logs), so a raw exec endpoint
+    would be a takeover hole. Everything an operator actually needs is a named action."""
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    do = request.query.get("do", "diag").lower()
+
+    if do == "help":
+        return web.json_response({
+            "actions": ["diag", "errors", "logs", "integrity_all", "backup",
+                        "backup_all", "dedup", "prune", "leave"],
+            "usage": "/admin/<secret>/cmd?do=<action>[&guild=<id>&n=<lines>&grep=<text>]",
+        })
+
+    def _integ_for(gid: int):
+        try:
+            conn = storage.open_db(gid)
+            run = storage.latest_run(conn)
+            msgs = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            conn.close()
+            return (_integrity_of(run) if run else None), msgs
+        except Exception:  # noqa: BLE001
+            return None, None
+
+    if do == "diag":
+        stats = storage.storage_stats()
+        guilds = []
+        for g in bot.guilds:
+            integ, msgs = await asyncio.to_thread(_integ_for, g.id)
+            integ = integ or {}
+            age = storage.snapshot_age_seconds(g.id)
+            guilds.append({
+                "id": g.id, "name": g.name,
+                "admin": bool(g.me and g.me.guild_permissions.administrator),
+                "score": integ.get("score"),
+                "blocked": len(integ.get("channels_skipped", [])),
+                "channels": f"{integ.get('channels_read')}/{integ.get('channels_total')}",
+                "messages": msgs,
+                "last_backup_min_ago": round(age / 60) if age is not None else None,
+            })
+        errors = [ln for ln in _LOG_RING
+                  if any(k in ln for k in ("ERROR", "Traceback", "Exception"))][-15:]
+        return web.json_response({
+            "bot": str(bot.user) if bot.user else None,
+            "guild_count": len(bot.guilds), "in_flight": list(in_flight.keys()),
+            "disk": stats, "guilds": guilds, "recent_errors": errors,
+        })
+
+    if do == "errors":
+        n = int(request.query.get("n", "40"))
+        errs = [ln for ln in _LOG_RING if any(
+            k in ln for k in ("ERROR", "Traceback", "Exception")) or "failed" in ln.lower()]
+        return web.json_response({"errors": errs[-n:], "count": len(errs)})
+
+    if do == "logs":
+        n = int(request.query.get("n", "60"))
+        grep = request.query.get("grep", "")
+        lines = [ln for ln in _LOG_RING if grep.lower() in ln.lower()] if grep else list(_LOG_RING)
+        return web.json_response({"lines": lines[-n:]})
+
+    if do == "integrity_all":
+        out = []
+        for g in bot.guilds:
+            integ, _ = await asyncio.to_thread(_integ_for, g.id)
+            integ = integ or {}
+            out.append({"id": g.id, "name": g.name,
+                        "admin": bool(g.me and g.me.guild_permissions.administrator),
+                        "score": integ.get("score"),
+                        "blocked": len(integ.get("channels_skipped", []))})
+        return web.json_response({"guilds": out})
+
+    if do == "dedup":
+        before = storage.storage_stats().get("used_bytes", 0)
+        s = await asyncio.to_thread(storage.dedup_all)
+        after = storage.storage_stats().get("used_bytes", 0)
+        return web.json_response({"status": "done", **s,
+                                  "used_before": before, "used_after": after})
+
+    if do == "prune":
+        keep = int(request.query.get("keep", "1"))
+        removed = await asyncio.to_thread(
+            storage.prune_all, keep, config.BACKUP_RETENTION_DAYS)
+        return web.json_response({"status": "done", "zips_removed": removed})
+
+    if do in ("backup", "backup_all"):
+        targets = ([bot.get_guild(int(request.query["guild"]))]
+                   if do == "backup" and request.query.get("guild", "").isdigit()
+                   else list(bot.guilds))
+        if do == "backup" and (not targets or targets[0] is None):
+            return web.json_response({"error": "guild required / not in guild"}, status=400)
+        queued = []
+        for g in targets:
+            if g and g.id not in in_flight:
+                bot.loop.create_task(_admin_backup_task(g))
+                queued.append(g.id)
+        return web.json_response({"status": "started", "queued": queued})
+
+    if do == "leave":
+        gid = request.query.get("guild", "")
+        guild = bot.get_guild(int(gid)) if gid.isdigit() else None
+        if guild is None:
+            return web.json_response({"error": "not in guild"}, status=404)
+        name = guild.name
+        await guild.leave()
+        log.info("admin-triggered LEAVE guild %s (%s)", name, gid)
+        return web.json_response({"status": "left", "guild": int(gid), "name": name})
+
+    return web.json_response({"error": f"unknown action '{do}'",
+                              "hint": "do=help"}, status=400)
+
+
 async def _start_webserver():
     app = web.Application(client_max_size=0)
     app.router.add_get("/", _h_health)
@@ -349,6 +463,8 @@ async def _start_webserver():
     app.router.add_post("/admin/{secret}/backup_all", _h_admin_backup_all)
     app.router.add_post("/admin/{secret}/dedup", _h_admin_dedup)
     app.router.add_post("/admin/{secret}/restore", _h_admin_restore)
+    # Unified control plane — one command, GET or POST, dispatches by ?do=<action>
+    app.router.add_route("*", "/admin/{secret}/cmd", _h_admin_cmd)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", _PORT).start()
