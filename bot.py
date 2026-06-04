@@ -260,9 +260,21 @@ async def on_guild_join(guild: discord.Guild):
                    "**3.** `/download` — رابط تحميل النسخة / download link\n"
                    "**4.** `/restore link:<url>` — استعد/انسخ سيرفر / restore or clone"),
             inline=False)
+        # If I wasn't added with Administrator, surface a one-click re-invite link
+        # that requests it — a bot can't grant itself admin, so this is the only fix.
+        if not me.guild_permissions.administrator:
+            invite = config.invite_url()
+            if invite:
+                e.add_field(
+                    name="⚠️ مهم / Important — I need Administrator",
+                    value=("ماعندي Administrator، فبيطلع لك رومات ناقصة بالنسخة.\n"
+                           "I lack Administrator, so some channels will be skipped.\n"
+                           f"➡️ [اضغط لإعطائي Administrator / Click to grant me Admin]({invite})\n"
+                           "(أو فعّلها يدوياً من Server Settings → Roles)"),
+                    inline=False)
         e.add_field(
             name="📋 كل الأوامر / All commands",
-            value="`/backup` · `/download` · `/restore` · `/status` · `/schedule` · `/search` · `/help`",
+            value="`/backup` · `/download` · `/restore` · `/status` · `/stats` · `/schedule` · `/search` · `/help`",
             inline=False)
         e.add_field(name="🌐 الموقع / Website", value=WELCOME_URL, inline=False)
         e.set_footer(text="تحتاج صلاحية Manage Server · Manage Server required")

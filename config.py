@@ -7,10 +7,11 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 APPLICATION_ID = os.getenv("APPLICATION_ID", "")
 
-# Permissions: View Channels + Read Message History + Send Messages +
-# Embed Links + Attach Files + Manage Webhooks (for restore).
-# 1024 + 65536 + 2048 + 16384 + 32768 + 536870912 = 536988288
-INVITE_PERMISSIONS = os.getenv("INVITE_PERMISSIONS", "536988288")
+# Invite with ADMINISTRATOR (8) so the bot can read EVERY channel the moment it's
+# added — no "channel skipped / denied access" gaps in backups. A bot cannot grant
+# itself admin after joining (Discord forbids self-elevation), so it must be on the
+# invite link. Override with INVITE_PERMISSIONS to request narrower perms instead.
+INVITE_PERMISSIONS = os.getenv("INVITE_PERMISSIONS", "8")
 
 # Optional dev guild ID for instant slash-command sync during development.
 DEV_GUILD_ID = os.getenv("DEV_GUILD_ID", "")
