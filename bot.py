@@ -536,6 +536,8 @@ async def status_cmd(interaction: discord.Interaction):
         return
     conn = storage.open_db(interaction.guild.id)
     run = storage.latest_run(conn)
+    total_msgs = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+    total_atts = conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0]
     conn.close()
     if not run:
         return await interaction.response.send_message(
@@ -545,13 +547,15 @@ async def status_cmd(interaction: discord.Interaction):
         storage.dir_size, storage.guild_dir(interaction.guild.id))
     e = discord.Embed(title="📊 آخر نسخة احتياطية / Latest backup",
                       color=0x5865F2)
-    e.add_field(name="🕒 Started", value=run["started_at"], inline=True)
-    e.add_field(name="🕒 Ended",   value=run["ended_at"] or "—", inline=True)
+    e.add_field(name="💬 إجمالي الرسائل / Total messages",
+                value=f"**{total_msgs:,}**", inline=True)
+    e.add_field(name="📎 إجمالي المرفقات / Total attachments",
+                value=f"**{total_atts:,}**", inline=True)
     e.add_field(name="📁 Channels", value=str(run["channels"]), inline=True)
-    e.add_field(name="💬 Messages", value=f"{run['messages']:,}", inline=True)
-    e.add_field(name="📎 Attachments", value=f"{run['attachments']:,}", inline=True)
-    e.add_field(name="💾 Bytes (DL)", value=_fmt_size(run["bytes"] or 0),
-                inline=True)
+    e.add_field(name="🕒 آخر نسخة / Last backup",
+                value=(run["ended_at"] or run["started_at"] or "—"), inline=True)
+    e.add_field(name="➕ آخر تشغيل أضاف / Last run added",
+                value=f"+{run['messages']:,} msgs", inline=True)
     e.add_field(name="🗄️ On-disk total",
                 value=_fmt_size(folder_bytes), inline=True)
     if run["error"]:
@@ -652,6 +656,13 @@ async def report_cmd(interaction: discord.Interaction):
     unreadable = len(text_chs) - readable
     conn = await asyncio.to_thread(storage.open_db, g.id)
     run = await asyncio.to_thread(storage.latest_run, conn)
+
+    def _totals():
+        # TOTAL stored across ALL runs — not the last run's incremental delta.
+        m = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        a = conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0]
+        return m, a
+    total_msgs, total_atts = await asyncio.to_thread(_totals)
     await asyncio.to_thread(conn.close)
     size = await asyncio.to_thread(storage.dir_size, storage.guild_dir(g.id))
     files = await asyncio.to_thread(storage.guild_file_count, g.id)
@@ -659,22 +670,22 @@ async def report_cmd(interaction: discord.Interaction):
 
     lines = [
         "=== BackUp Bot report ===",
-        f"server         : {g.name} ({g.id})",
-        f"bot_admin      : {'YES' if admin else 'NO  <-- GRANT ADMINISTRATOR'}",
-        f"channels_read  : {readable}/{len(text_chs)} text channels"
+        f"server          : {g.name} ({g.id})",
+        f"bot_admin       : {'YES' if admin else 'NO  <-- GRANT ADMINISTRATOR'}",
+        f"channels_read   : {readable}/{len(text_chs)} text channels"
         + (f"   ({unreadable} BLOCKED -> backup incomplete)" if unreadable else "   (full access)"),
+        f"TOTAL messages  : {total_msgs:,}   <-- everything backed up",
+        f"TOTAL attachments: {total_atts:,}",
     ]
     if run:
         lines += [
-            f"last_backup    : {run.get('ended_at') or run.get('started_at') or '-'}",
-            f"messages       : {run.get('messages', 0)}",
-            f"attachments    : {run.get('attachments', 0)}",
-            f"downloaded     : {_fmt_size(run.get('bytes', 0) or 0)}",
+            f"last_backup_at  : {run.get('ended_at') or run.get('started_at') or '-'}",
+            f"last_run_added  : +{run.get('messages', 0)} msgs (incremental)",
         ]
         if run.get("error"):
-            lines.append(f"last_error     : {run['error']}")
+            lines.append(f"last_error      : {run['error']}")
     else:
-        lines.append("last_backup    : NONE - run /backup first")
+        lines.append("last_backup     : NONE - run /backup first")
     lines += [
         f"data_files     : {files}",
         f"on_disk        : {_fmt_size(size)}",

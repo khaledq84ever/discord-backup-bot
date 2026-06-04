@@ -1,636 +1,339 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BackUp Bot — احفظ سيرفر ديسكورد كامل للأبد</title>
-<meta name="description" content="بوت نسخ احتياطي كامل لسيرفر ديسكورد. يحفظ كل الرسائل، الرومات، الرولات، الأعضاء، الصور والمرفقات. حماية من الحذف.">
-<meta property="og:title" content="BackUp Bot — نسخة احتياطية كاملة لديسكورد">
-<meta property="og:description" content="احفظ سيرفرك من الحذف — رسائل، صور، أعضاء، رولات، رومز.">
-<meta property="og:image" content="/family.png">
-<meta name="twitter:card" content="summary_large_image">
-<link rel="icon" type="image/png" href="/logo.png">
-<link rel="apple-touch-icon" href="/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#0a0b14" />
+<title>Backup Application — احفظ سيرفر ديسكورد كامل · Discord Backup Bot</title>
+<meta name="description" content="Backup Application — a powerful Discord backup & restore solution. Back up channels, roles, categories, permissions and settings quickly and securely. Developed by @KhaledQ84Ever." />
+<meta property="og:title" content="Backup Application — Discord Backup & Restore" />
+<meta property="og:description" content="Protect your server: channels, roles, categories, permissions & settings — backed up securely. Restore to any server in seconds." />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="https://discordbackupbot.vercel.app/logo-backup.png" />
+
+<link rel="icon" href="logo-backup.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Tajawal:wght@500;700;800;900&display=swap" rel="stylesheet" />
+
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #ffffff;
-    --bg-alt: #f7f8fc;
-    --ink: #0a0a0a;
-    --ink-soft: #1f2330;
-    --muted: #525866;
-    --line: #e6e9f2;
-    --line-strong: #c9cfe0;
-    --blurple: #5865f2;
-    --blurple-dark: #4452d4;
-    --gold: #d4a843;
-    --red: #e8001c;
-    --green: #1f9d55;
-    --shadow-sm: 0 2px 6px rgba(20,22,40,0.06);
-    --shadow-md: 0 12px 28px -8px rgba(20,22,40,0.12);
-    --shadow-lg: 0 24px 60px -20px rgba(20,22,40,0.22);
-    --glow-blurple: 0 12px 36px -6px rgba(88,101,242,0.55);
-  }
-  html { background: var(--bg); color: var(--ink); -webkit-text-size-adjust: 100%; }
-  body {
-    font-family: 'Cairo', 'Inter', system-ui, -apple-system, sans-serif;
-    line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    font-size: 16px;
-  }
+:root{
+  --bg:#07080f;
+  --bg-2:#0b0d18;
+  --ink:#eef1ff;
+  --muted:#9aa3c7;
+  --faint:#69708f;
+  --blurple:#5865f2;
+  --blurple-2:#7c83ff;
+  --emerald:#34d8a8;
+  --gold:#e7b84b;
+  --card:rgba(255,255,255,.045);
+  --card-brd:rgba(255,255,255,.09);
+  --glass:rgba(15,18,33,.62);
+  --radius:22px;
+  --shadow:0 24px 70px -28px rgba(0,0,0,.85);
+  --font-d:"Sora",sans-serif;
+  --font-b:"Plus Jakarta Sans",sans-serif;
+  --font-ar:"Tajawal",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{font-family:var(--font-b);background:var(--bg);color:var(--ink);line-height:1.6;
+  overflow-x:hidden;min-height:100vh;position:relative}
+[dir="rtl"] .ar,[dir="rtl"] h1,[dir="rtl"] h2{font-family:var(--font-ar)}
+.ar{font-family:var(--font-ar)}.en{font-family:var(--font-b)}
+a{color:inherit;text-decoration:none}
 
-  /* ───── NAV ───── */
-  .nav {
-    position: sticky; top: 0; z-index: 50;
-    backdrop-filter: blur(14px);
-    background: rgba(255,255,255,0.86);
-    border-bottom: 1px solid var(--line);
-  }
-  .nav-inner {
-    max-width: 1180px; margin: 0 auto; padding: 14px 22px;
-    display: flex; align-items: center; gap: 18px; justify-content: space-between;
-  }
-  .brand {
-    display: flex; align-items: center; gap: 11px;
-    color: var(--ink); text-decoration: none;
-    font-weight: 900; font-size: 18px; letter-spacing: -0.3px;
-  }
-  .brand img { width: 38px; height: 38px; border-radius: 10px;
-               box-shadow: var(--shadow-sm); }
-  .nav-links { display: flex; gap: 26px; }
-  .nav-links a { color: var(--ink-soft); text-decoration: none;
-                  font-weight: 700; font-size: 14.5px; transition: color .15s; }
-  .nav-links a:hover { color: var(--blurple); }
+.bg-fx{position:fixed;inset:0;z-index:-2;overflow:hidden;pointer-events:none}
+.orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:drift 22s ease-in-out infinite}
+.orb.a{width:540px;height:540px;background:radial-gradient(circle,#5865f2,transparent 68%);top:-180px;inset-inline-end:-120px}
+.orb.b{width:480px;height:480px;background:radial-gradient(circle,#34d8a8,transparent 70%);bottom:-160px;inset-inline-start:-120px;animation-delay:-7s;opacity:.32}
+.orb.c{width:420px;height:420px;background:radial-gradient(circle,#7c83ff,transparent 72%);top:42%;inset-inline-start:46%;animation-delay:-13s;opacity:.28}
+@keyframes drift{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(0,-46px) scale(1.08)}}
+.grain{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.04;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 
-  /* ───── BUTTONS ───── */
-  .btn {
-    display: inline-flex; align-items: center; gap: 9px;
-    padding: 12px 22px; border-radius: 12px;
-    font-weight: 800; font-size: 15px; text-decoration: none;
-    font-family: inherit;
-    position: relative; overflow: hidden;
-    transition: transform .18s cubic-bezier(.2,.6,.2,1),
-                box-shadow .25s cubic-bezier(.2,.6,.2,1),
-                background .15s, border-color .15s;
-  }
-  .btn:active { transform: translateY(0) scale(.985); }
-  .btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.wrap{max-width:1120px;margin:0 auto;padding:0 22px}
 
-  .btn-primary {
-    background: var(--blurple); color: #fff;
-    box-shadow: var(--shadow-md), 0 0 0 0 rgba(88,101,242,0);
-  }
-  .btn-primary:hover { background: var(--blurple-dark);
-                       transform: translateY(-2px);
-                       box-shadow: var(--glow-blurple); }
-  .btn-primary::after {  /* shimmer sweep on hover */
-    content: ""; position: absolute; inset: 0;
-    background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.18) 50%, transparent 100%);
-    transform: translateX(-100%); transition: transform .55s ease;
-  }
-  .btn-primary:hover::after { transform: translateX(100%); }
+.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+  background:linear-gradient(to bottom,rgba(7,8,15,.82),rgba(7,8,15,.35));border-bottom:1px solid rgba(255,255,255,.05)}
+.nav-in{display:flex;align-items:center;gap:14px;height:66px}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--font-d);font-weight:800}
+.brand img{width:34px;height:34px;border-radius:9px;box-shadow:0 6px 18px -6px var(--blurple)}
+.brand b{font-size:1.02rem;letter-spacing:-.01em}
+.nav-links{margin-inline-start:auto;display:flex;gap:6px;align-items:center}
+.nav-links a{padding:9px 14px;border-radius:11px;font-size:.86rem;font-weight:600;color:var(--muted);transition:.2s}
+.nav-links a:hover{color:#fff;background:rgba(255,255,255,.06)}
+.nav-cta{background:var(--blurple)!important;color:#fff!important;box-shadow:0 8px 22px -8px var(--blurple)}
+.nav-cta:hover{background:var(--blurple-2)!important;transform:translateY(-1px)}
+.lang-btn{cursor:pointer;border:1px solid var(--card-brd)}
 
-  .btn-ghost {
-    background: #fff; color: var(--ink);
-    border: 1.5px solid var(--line-strong);
-  }
-  .btn-ghost:hover {
-    transform: translateY(-2px);
-    border-color: var(--ink);
-    box-shadow: var(--shadow-md);
-  }
+.hero{position:relative;text-align:center;padding:84px 0 64px}
+.shield{width:118px;height:118px;margin:0 auto 26px;position:relative;animation:rise .9s cubic-bezier(.2,.7,.2,1) both}
+.shield .glow{position:absolute;inset:-26px;border-radius:50%;background:radial-gradient(circle,rgba(88,101,242,.55),transparent 65%);filter:blur(8px);animation:pulse 3.6s ease-in-out infinite}
+.shield svg{position:relative;width:100%;height:100%;filter:drop-shadow(0 14px 30px rgba(88,101,242,.5))}
+@keyframes pulse{0%,100%{opacity:.65;transform:scale(1)}50%{opacity:1;transform:scale(1.07)}}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 15px;border-radius:999px;
+  background:rgba(52,216,168,.1);border:1px solid rgba(52,216,168,.28);color:var(--emerald);
+  font-size:.78rem;font-weight:700;margin-bottom:22px;animation:rise .9s .1s both}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--emerald);box-shadow:0 0 10px var(--emerald)}
+h1.title{font-family:var(--font-d);font-weight:800;line-height:1.05;letter-spacing:-.02em;
+  font-size:clamp(2.4rem,7vw,4.6rem);margin-bottom:8px;animation:rise .9s .15s both}
+.title .grad{background:linear-gradient(110deg,#fff 10%,#aeb6ff 45%,#5865f2 92%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{font-family:var(--font-ar);font-size:clamp(1.05rem,2.6vw,1.4rem);font-weight:700;color:#cdd3f0;margin:6px auto;max-width:640px;animation:rise .9s .2s both}
+.sub-en{color:var(--muted);font-size:clamp(.9rem,2vw,1.04rem);max-width:600px;margin:0 auto 30px;font-weight:500;animation:rise .9s .25s both}
+.hero-cta{display:flex;gap:13px;justify-content:center;flex-wrap:wrap;animation:rise .9s .3s both}
+@keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
 
-  .btn-pulse { animation: pulse 2.4s ease-in-out infinite; }
-  @keyframes pulse {
-    0%, 100% { box-shadow: var(--shadow-md), 0 0 0 0 rgba(88,101,242,0.55); }
-    50%      { box-shadow: var(--shadow-md), 0 0 0 14px rgba(88,101,242,0); }
-  }
+.btn{display:inline-flex;align-items:center;gap:9px;padding:14px 24px;border-radius:14px;
+  font-family:var(--font-d);font-weight:700;font-size:.95rem;cursor:pointer;border:1px solid transparent;
+  transition:transform .2s cubic-bezier(.2,.7,.2,1),box-shadow .2s,background .2s;will-change:transform}
+.btn svg{width:19px;height:19px}
+.btn-primary{background:linear-gradient(180deg,var(--blurple-2),var(--blurple));color:#fff;
+  box-shadow:0 14px 30px -12px var(--blurple),inset 0 1px 0 rgba(255,255,255,.25)}
+.btn-primary:hover{transform:translateY(-3px);box-shadow:0 22px 44px -14px var(--blurple)}
+.btn-ghost{background:var(--card);color:#fff;border-color:var(--card-brd);backdrop-filter:blur(8px)}
+.btn-ghost:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.08)}
 
-  /* ───── HERO ───── */
-  .hero {
-    max-width: 1180px; margin: 0 auto;
-    padding: 70px 22px 30px; text-align: center;
-  }
-  .hero-logo {
-    width: 96px; height: 96px; border-radius: 22px;
-    margin: 0 auto 22px; display: block;
-    box-shadow: 0 16px 40px -10px rgba(88,101,242,0.4);
-    animation: float 4.5s ease-in-out infinite;
-  }
-  @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50%      { transform: translateY(-8px); }
-  }
-  .pill {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 6px 14px; border-radius: 999px;
-    background: #ecfdf5; color: var(--green);
-    font-weight: 800; font-size: 13px; margin-bottom: 18px;
-    font-family: 'Inter', sans-serif;
-    border: 1px solid #a7f3d0;
-    letter-spacing: 0.3px;
-  }
-  .pill .dot { width: 7px; height: 7px; border-radius: 50%;
-               background: var(--green); animation: blink 1.6s ease-in-out infinite; }
-  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.trust{display:flex;gap:26px;justify-content:center;flex-wrap:wrap;margin-top:38px;animation:rise .9s .4s both}
+.trust div{text-align:center}
+.trust b{display:block;font-family:var(--font-d);font-size:1.5rem;color:#fff}
+.trust span{font-size:.74rem;color:var(--faint);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
 
-  h1 {
-    color: var(--ink); font-weight: 900;
-    font-size: clamp(36px, 6vw, 72px);
-    line-height: 1.06; letter-spacing: -1.5px; margin-bottom: 14px;
-  }
-  h1 .accent { color: var(--blurple); }
-  .hero-sub {
-    color: var(--ink-soft); font-size: clamp(16px, 2vw, 19px);
-    font-weight: 700; max-width: 660px; margin: 0 auto 8px;
-  }
-  .hero-en {
-    color: var(--muted); font-size: clamp(13px, 1.5vw, 15px);
-    font-family: 'Inter', sans-serif; font-weight: 500;
-    max-width: 660px; margin: 0 auto 32px;
-  }
-  .btnrow { display: flex; gap: 12px; justify-content: center;
-            flex-wrap: wrap; margin-bottom: 16px; }
-  .trust {
-    display: flex; gap: 22px; justify-content: center;
-    flex-wrap: wrap; margin-top: 28px;
-    color: var(--muted); font-family: 'Inter', sans-serif;
-    font-size: 13px; font-weight: 600;
-  }
-  .trust span { display: inline-flex; align-items: center; gap: 6px; }
-  .trust svg { width: 16px; height: 16px; }
+section.block{padding:58px 0}
+.sec-head{text-align:center;max-width:680px;margin:0 auto 38px}
+.kicker{font-family:var(--font-d);font-size:.76rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--blurple-2);margin-bottom:12px}
+h2{font-family:var(--font-d);font-weight:800;font-size:clamp(1.7rem,4.4vw,2.6rem);letter-spacing:-.02em;line-height:1.12}
+.sec-head .ar{margin-top:10px;color:var(--muted);font-size:1.02rem;font-weight:500}
 
-  /* ───── PREVIEW STATS CARD ───── */
-  .preview {
-    max-width: 980px; margin: 50px auto 0; padding: 0 22px;
-  }
-  .preview-card {
-    background: #161825; color: #fff;
-    border-radius: 22px; padding: 30px;
-    box-shadow: 0 30px 70px -20px rgba(20,22,40,0.4);
-  }
-  .preview-head { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
-  .preview-icon {
-    width: 44px; height: 44px; border-radius: 11px;
-    background: #57f287; display: grid; place-items: center;
-    color: #0a0a0a;
-  }
-  .preview-icon svg { width: 22px; height: 22px; }
-  .preview-title { font-family: 'Inter', sans-serif; font-weight: 800; font-size: 19px; }
-  .preview-sub { color: #9aa6d4; font-family: 'Inter', sans-serif;
-                 font-size: 13px; margin-top: 2px; }
-  .preview-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
-  .stat {
-    background: #1f2233; border-radius: 11px; padding: 14px 16px;
-    border-top: 3px solid var(--blurple); font-family: 'Inter', sans-serif;
-  }
-  .stat.gold  { border-top-color: var(--gold); }
-  .stat.red   { border-top-color: var(--red); }
-  .stat.green { border-top-color: var(--green); }
-  .stat-label { color: #9aa6d4; font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-  .stat-value { font-size: 22px; font-weight: 900; line-height: 1.1; }
+.card{background:var(--card);border:1px solid var(--card-brd);border-radius:var(--radius);backdrop-filter:blur(10px);box-shadow:var(--shadow)}
 
-  /* ───── FEATURES ───── */
-  section.features { padding: 80px 22px 50px; max-width: 1180px; margin: 0 auto; }
-  .section-head { text-align: center; margin-bottom: 42px; }
-  .section-head h2 {
-    color: var(--ink); font-weight: 900;
-    font-size: clamp(28px, 4.5vw, 44px); letter-spacing: -1px; margin-bottom: 8px;
-  }
-  .section-head p {
-    color: var(--muted); font-size: 15px; font-weight: 600;
-    font-family: 'Inter', sans-serif;
-  }
-  .feature-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 16px;
-  }
-  .feature {
-    background: #fff; border: 1px solid var(--line);
-    padding: 26px 22px; border-radius: 16px;
-    transition: transform .2s cubic-bezier(.2,.6,.2,1),
-                border-color .2s, box-shadow .2s;
-  }
-  .feature:hover {
-    transform: translateY(-4px);
-    border-color: var(--blurple);
-    box-shadow: var(--shadow-md);
-  }
-  .feature-icon {
-    width: 46px; height: 46px; border-radius: 12px;
-    display: grid; place-items: center; margin-bottom: 14px;
-  }
-  .feature-icon.b { background: #ecf0fe; color: var(--blurple); }
-  .feature-icon.g { background: #ecfdf5; color: var(--green); }
-  .feature-icon.r { background: #fef2f2; color: var(--red); }
-  .feature-icon.y { background: #fefce8; color: var(--gold); }
-  .feature-icon.p { background: #f5f3ff; color: #7c3aed; }
-  .feature-icon.pk { background: #fdf2f8; color: #db2777; }
-  .feature-icon svg { width: 24px; height: 24px; }
-  .feature h3 { color: var(--ink); font-weight: 900;
-                font-size: 18px; margin-bottom: 4px; }
-  .feature .en {
-    color: var(--muted); font-family: 'Inter', sans-serif;
-    font-weight: 600; font-size: 13px; margin-bottom: 10px;
-    letter-spacing: 0.2px; text-transform: uppercase;
-  }
-  .feature p { color: var(--ink-soft); font-size: 14.5px; font-weight: 500; }
+.about{display:grid;grid-template-columns:1.05fr .95fr;gap:22px;align-items:stretch}
+.about-text{padding:34px}
+.about-text h3{font-family:var(--font-d);font-size:1.5rem;margin-bottom:14px}
+.about-text p{color:var(--muted);font-size:1.02rem;margin-bottom:10px}
+.about-text p.ar{font-size:1.08rem;color:#c7cdec;line-height:1.9}
+.about-side{padding:30px;display:flex;flex-direction:column;justify-content:center;gap:16px;
+  background:linear-gradient(160deg,rgba(88,101,242,.14),rgba(52,216,168,.06))}
+.mini{display:flex;align-items:center;gap:13px}
+.mini .ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none;background:rgba(255,255,255,.06);border:1px solid var(--card-brd)}
+.mini .ic svg{width:21px;height:21px;color:var(--emerald)}
+.mini b{font-family:var(--font-d);font-size:.96rem}
+.mini span{display:block;color:var(--faint);font-size:.8rem;font-weight:500}
 
-  /* ───── COMMANDS ───── */
-  .cmds-wrap { background: var(--bg-alt); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  section.cmds { padding: 80px 22px 70px; max-width: 1180px; margin: 0 auto; }
-  .cmd-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 12px;
-  }
-  .cmd {
-    background: #fff; border: 1px solid var(--line); padding: 18px 20px;
-    border-radius: 14px; border-right: 4px solid var(--accent, var(--blurple));
-    display: flex; align-items: center; gap: 14px;
-    transition: transform .18s, box-shadow .18s, border-color .18s;
-  }
-  .cmd:hover {
-    transform: translateX(-3px);
-    box-shadow: var(--shadow-md);
-  }
-  .cmd-icon {
-    width: 40px; height: 40px; border-radius: 10px;
-    background: var(--accent-soft, #ecf0fe);
-    color: var(--accent, var(--blurple));
-    display: grid; place-items: center; flex-shrink: 0;
-  }
-  .cmd-icon svg { width: 20px; height: 20px; }
-  .cmd code {
-    font-family: 'Inter', 'SF Mono', monospace; color: var(--ink);
-    font-weight: 800; font-size: 14.5px;
-    display: block; margin-bottom: 2px;
-    background: none; padding: 0;
-  }
-  .cmd small { color: var(--muted); font-size: 13px; font-weight: 600; }
+.feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.feat{padding:26px 24px;border-radius:18px;background:var(--card);border:1px solid var(--card-brd);
+  transition:transform .25s cubic-bezier(.2,.7,.2,1),border-color .25s,background .25s;position:relative;overflow:hidden}
+.feat::after{content:"";position:absolute;inset:0;background:radial-gradient(140px 90px at var(--mx,80%) 0%,rgba(88,101,242,.16),transparent 70%);opacity:0;transition:.3s}
+.feat:hover{transform:translateY(-6px);border-color:rgba(124,131,255,.4);background:rgba(255,255,255,.06)}
+.feat:hover::after{opacity:1}
+.feat .chk{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;margin-bottom:16px;
+  background:linear-gradient(160deg,rgba(52,216,168,.22),rgba(52,216,168,.06));border:1px solid rgba(52,216,168,.32)}
+.feat .chk svg{width:23px;height:23px;color:var(--emerald)}
+.feat h4{font-family:var(--font-d);font-size:1.06rem;margin-bottom:5px}
+.feat .ar{color:var(--muted);font-size:.92rem;font-weight:500}
 
-  /* ───── CTA ───── */
-  .cta-wrap { padding: 70px 22px; }
-  .cta {
-    max-width: 860px; margin: 0 auto; padding: 50px 28px; text-align: center;
-    background:
-      radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18) 0%, transparent 50%),
-      linear-gradient(135deg, var(--blurple), var(--blurple-dark));
-    border-radius: 24px; color: #fff;
-    box-shadow: 0 28px 60px -16px rgba(88,101,242,0.55);
-  }
-  .cta h2 {
-    color: #fff; font-weight: 900;
-    font-size: clamp(26px, 4.5vw, 38px);
-    margin-bottom: 10px; letter-spacing: -0.8px;
-  }
-  .cta p { color: rgba(255,255,255,0.9); font-weight: 600;
-           margin-bottom: 24px; font-size: 15px; }
-  .cta .btn-primary { background: #fff; color: var(--blurple); }
-  .cta .btn-primary:hover { background: #f0f1ff; }
-  .cta .btn-ghost { background: transparent; border-color: rgba(255,255,255,0.45);
-                     color: #fff; }
-  .cta .btn-ghost:hover { border-color: #fff; }
+.links-card{padding:40px;text-align:center;background:radial-gradient(120% 120% at 50% 0%,rgba(88,101,242,.16),transparent 60%),var(--glass);border:1px solid var(--card-brd);border-radius:28px;backdrop-filter:blur(14px);box-shadow:var(--shadow)}
+.link-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:30px}
+.link-btn{display:flex;align-items:center;gap:14px;padding:18px 20px;border-radius:16px;text-align:start;
+  background:rgba(255,255,255,.04);border:1px solid var(--card-brd);
+  transition:transform .22s cubic-bezier(.2,.7,.2,1),box-shadow .22s,border-color .22s,background .22s}
+.link-btn:hover{transform:translateY(-4px) scale(1.01)}
+.link-btn .lic{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;flex:none}
+.link-btn .lic svg{width:24px;height:24px}
+.link-btn .lt b{display:block;font-family:var(--font-d);font-size:1rem;color:#fff}
+.link-btn .lt span{font-size:.8rem;color:var(--faint)}
+.link-btn .arrow{margin-inline-start:auto;color:var(--faint);transition:.22s}
+.link-btn:hover .arrow{color:#fff}
+.lb-web .lic{background:rgba(52,216,168,.14);border:1px solid rgba(52,216,168,.3)}.lb-web .lic svg{color:var(--emerald)}
+.lb-web:hover{border-color:rgba(52,216,168,.5);box-shadow:0 16px 36px -16px rgba(52,216,168,.5)}
+.lb-x .lic{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18)}.lb-x .lic svg{color:#fff}
+.lb-x:hover{border-color:rgba(255,255,255,.4);box-shadow:0 16px 36px -16px rgba(255,255,255,.3)}
+.lb-invite .lic{background:rgba(88,101,242,.18);border:1px solid rgba(88,101,242,.4)}.lb-invite .lic svg{color:var(--blurple-2)}
+.lb-invite:hover{border-color:rgba(88,101,242,.6);box-shadow:0 16px 36px -16px var(--blurple)}
+.lb-support .lic{background:rgba(231,184,75,.14);border:1px solid rgba(231,184,75,.32)}.lb-support .lic svg{color:var(--gold)}
+.lb-support:hover{border-color:rgba(231,184,75,.5);box-shadow:0 16px 36px -16px rgba(231,184,75,.45)}
 
-  /* ───── FOOTER ───── */
-  footer {
-    text-align: center; padding: 30px 22px 40px;
-    color: var(--muted); font-size: 13px; font-weight: 600;
-    border-top: 1px solid var(--line);
-  }
-  footer a { color: var(--blurple); text-decoration: none; font-weight: 800; }
-  .footer-family {
-    display: inline-flex; align-items: center; gap: 10px;
-    margin-bottom: 12px;
-  }
-  .footer-family img { width: 32px; height: 32px; border-radius: 8px;
-                        box-shadow: var(--shadow-sm);
-                        transition: transform .2s; }
-  .footer-family img:hover { transform: translateY(-3px) scale(1.06); }
-  .credit {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 8px 16px; border-radius: 999px; background: var(--bg-alt);
-    border: 1px solid var(--line); text-decoration: none; color: var(--ink);
-    font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 800;
-    margin-top: 8px; transition: border-color .15s;
-  }
-  .credit:hover { border-color: var(--ink); }
-  .credit svg { width: 13px; height: 13px; }
+.dev-card{display:flex;align-items:center;gap:20px;padding:26px 30px;flex-wrap:wrap;justify-content:center;
+  background:linear-gradient(120deg,rgba(124,131,255,.12),rgba(52,216,168,.07));border:1px solid var(--card-brd);border-radius:24px;backdrop-filter:blur(10px)}
+.dev-av{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;flex:none;
+  background:linear-gradient(160deg,var(--blurple-2),var(--blurple));font-family:var(--font-d);font-weight:800;font-size:1.5rem;color:#fff;box-shadow:0 10px 28px -10px var(--blurple)}
+.dev-meta{text-align:start}
+.dev-meta .lbl{font-size:.74rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:700}
+.dev-meta b{font-family:var(--font-d);font-size:1.3rem;display:block;margin:2px 0}
+.dev-meta a{color:var(--emerald);font-weight:600;font-size:.92rem}
+.dev-meta a:hover{text-decoration:underline}
 
-  /* ───── MOBILE ───── */
-  @media (max-width: 720px) {
-    .nav-links { display: none; }
-    .btnrow .btn { flex: 1 1 auto; justify-content: center; }
-    .hero { padding: 40px 18px 24px; }
-    .preview-row { grid-template-columns: repeat(2, 1fr); }
-    .preview-card { padding: 22px 18px; }
-    section.features, section.cmds { padding: 60px 16px; }
-    .cta-wrap { padding: 50px 16px; }
-  }
+footer{margin-top:40px;border-top:1px solid rgba(255,255,255,.06);background:linear-gradient(to top,rgba(88,101,242,.06),transparent)}
+.foot-in{padding:38px 0;text-align:center}
+.foot-brand{display:inline-flex;align-items:center;gap:10px;font-family:var(--font-d);font-weight:800;font-size:1.05rem;margin-bottom:10px}
+.foot-brand img{width:28px;height:28px;border-radius:8px}
+.foot-links{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;margin:14px 0 18px}
+.foot-links a{color:var(--muted);font-size:.88rem;font-weight:600;transition:.2s}
+.foot-links a:hover{color:#fff}
+.foot-dev{color:var(--ink);font-weight:700;font-size:.95rem}
+.foot-dev a{color:var(--blurple-2)}
+.foot-copy{color:var(--faint);font-size:.82rem;margin-top:6px}
+
+@media(max-width:820px){.about{grid-template-columns:1fr}.nav-links a:not(.nav-cta):not(.lang-btn){display:none}}
+@media(max-width:480px){.hero{padding:60px 0 44px}.trust{gap:18px}.about-text,.about-side,.links-card{padding:26px 20px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 
-<!-- ─── NAV ─── -->
-<nav class="nav">
-  <div class="nav-inner">
-    <a href="/" class="brand">
-      <img src="/logo.png" alt="BackUp Bot logo">
-      <span>BackUp Bot</span>
-    </a>
-    <div class="nav-links">
-      <a href="#features">المميزات</a>
-      <a href="#commands">الأوامر</a>
-      <a href="https://github.com/khaledq84ever/discord-backup-bot">GitHub</a>
-    </div>
-    <a class="btn btn-primary btn-pulse" id="addBtn" href="#" rel="noopener">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 5v14m-7-7h14" stroke="#fff" stroke-width="2.6" stroke-linecap="round" fill="none"/></svg>
-      <span>أضفه لسيرفرك</span>
-    </a>
-  </div>
-</nav>
+<div class="bg-fx"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+<div class="grain"></div>
 
-<!-- ─── HERO ─── -->
-<section class="hero">
-  <img class="hero-logo" src="/logo.png" alt="BackUp Bot">
-  <div class="pill"><span class="dot"></span> أرشيف 100% لسيرفر ديسكورد</div>
-  <h1>احفظ سيرفرك <span class="accent">للأبد</span></h1>
-  <p class="hero-sub">رسائل · صور · رومز · رولات · أعضاء — كل شي محفوظ على القرص ومحمي من الحذف</p>
-  <p class="hero-en">Full Discord server backup — every channel, role, member, message, embed, reaction, and attachment.</p>
-  <div class="btnrow">
-    <a class="btn btn-primary" id="addBtn2" href="#" rel="noopener">
-      <!-- Discord glyph -->
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.075.075 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037 19.74 19.74 0 0 0-4.885 1.515.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.029zM8.02 15.331c-1.182 0-2.157-1.086-2.157-2.42 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.956 2.419-2.157 2.419zm7.974 0c-1.18 0-2.157-1.086-2.157-2.42 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.946 2.419-2.157 2.419z"/></svg>
-      <span>أضفه لديسكورد</span>
-    </a>
-    <a class="btn btn-ghost" href="https://github.com/khaledq84ever/discord-backup-bot">
-      <!-- GitHub octocat -->
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.87 10.91.58.1.78-.25.78-.55v-1.94c-3.2.7-3.87-1.37-3.87-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.04-.71.08-.69.08-.69 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.18a10.93 10.93 0 0 1 5.74 0c2.2-1.49 3.16-1.18 3.16-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.15v3.18c0 .31.21.66.79.55C20.22 21.38 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
-      <span>GitHub</span>
-    </a>
+<nav class="nav"><div class="wrap nav-in">
+  <a href="#" class="brand"><img src="logo-backup.png" alt="Backup Application" /><b>Backup Application</b></a>
+  <div class="nav-links">
+    <a href="#about">About</a>
+    <a href="#features">Features</a>
+    <a href="#links">Links</a>
+    <a class="lang-btn" id="langBtn">EN</a>
+    <a class="nav-cta" id="navInvite" href="#">+ Add to Server</a>
+  </div>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <div class="shield">
+    <div class="glow"></div>
+    <svg viewBox="0 0 24 24" fill="none">
+      <defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c83ff"/><stop offset="1" stop-color="#5865f2"/></linearGradient></defs>
+      <path d="M12 2 4 5v6c0 5 3.4 8.5 8 11 4.6-2.5 8-6 8-11V5l-8-3Z" fill="url(#sg)"/>
+      <path d="M8.5 12.2l2.3 2.4 4.7-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <div class="eyebrow"><span class="dot"></span><span class="ar">نسخ واستعادة آمن للسيرفر</span> · Secure Backup &amp; Restore</div>
+  <h1 class="title"><span class="grad">Backup Application</span></h1>
+  <p class="sub ar">احفظ سيرفر ديسكورد بالكامل — الرومات، الرولات، التصنيفات، الصلاحيات والإعدادات — بسرعة وأمان.</p>
+  <p class="sub-en en">Protect your whole Discord server: channels, roles, categories, permissions &amp; settings — backed up securely and restored to any server in seconds.</p>
+  <div class="hero-cta">
+    <a class="btn btn-primary" id="heroInvite" href="#">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      أضف البوت / Add to Server</a>
+    <a class="btn btn-ghost" href="https://discordbackupbot.vercel.app/" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18" stroke-linecap="round"/></svg>
+      Official Website</a>
   </div>
   <div class="trust">
-    <span>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      MIT licensed
-    </span>
-    <span>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
-      Python · discord.py
-    </span>
-    <span>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 10h6M9 14h6"/></svg>
-      SQLite + JSON
-    </span>
+    <div><b>100%</b><span>Free</span></div>
+    <div><b>7</b><span>Features</span></div>
+    <div><b>&#8734;</b><span>Servers</span></div>
+    <div><b>1-tap</b><span>Restore</span></div>
   </div>
-</section>
+</div></header>
 
-<!-- ─── PREVIEW STATS CARD ─── -->
-<section class="preview">
-  <div class="preview-card">
-    <div class="preview-head">
-      <div class="preview-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 6L9 17l-5-5"/>
-        </svg>
-      </div>
-      <div>
-        <div class="preview-title">Backup complete — Khaled's Community</div>
-        <div class="preview-sub">84 of 84 channels archived · 100%</div>
-      </div>
+<section class="block" id="about"><div class="wrap">
+  <div class="sec-head"><div class="kicker">About the Bot</div><h2>What is Backup Application?</h2></div>
+  <div class="about">
+    <div class="card about-text">
+      <h3>Powerful. Secure. Effortless.</h3>
+      <p class="ar">Backup Application هو حل قوي لنسخ واستعادة سيرفرات ديسكورد، مصمّم لحماية سيرفرك عبر أخذ نسخة احتياطية من الرومات والرولات والتصنيفات والصلاحيات وإعدادات السيرفر — بسرعة وأمان.</p>
+      <p class="en">Backup Application is a powerful Discord backup and restore solution designed to protect servers by backing up channels, roles, categories, permissions, and server settings quickly and securely.</p>
     </div>
-    <div class="preview-row">
-      <div class="stat gold">
-        <div class="stat-label">Messages</div>
-        <div class="stat-value">152,847</div>
-      </div>
-      <div class="stat red">
-        <div class="stat-label">Attachments</div>
-        <div class="stat-value">12,309</div>
-      </div>
-      <div class="stat green">
-        <div class="stat-label">Downloaded</div>
-        <div class="stat-value">4.2 GB</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Elapsed</div>
-        <div class="stat-value">8m 12s</div>
-      </div>
+    <div class="card about-side">
+      <div class="mini"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 8.5 8 11 4.6-2.5 8-6 8-11V5l-8-3Z"/></svg></div><div><b>Secure Storage</b><span>تخزين آمن وروابط خاصة</span></div></div>
+      <div class="mini"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><b>Fast Restore</b><span>استعادة لأي سيرفر بضغطة</span></div></div>
+      <div class="mini"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg></div><div><b>Full Coverage</b><span>رومات · رولات · صلاحيات</span></div></div>
     </div>
   </div>
-</section>
+</div></section>
 
-<!-- ─── FEATURES ─── -->
-<section class="features" id="features">
-  <div class="section-head">
-    <h2>كل شي محفوظ · لا شي يضيع</h2>
-    <p>Every part of your server is captured — everything is yours, on disk</p>
+<section class="block" id="features"><div class="wrap">
+  <div class="sec-head"><div class="kicker">Features</div><h2>Everything your server needs</h2><p class="ar">كل ما يحتاجه سيرفرك للحماية والاستعادة</p></div>
+  <div class="feat-grid" id="featGrid"></div>
+</div></section>
+
+<section class="block" id="links"><div class="wrap">
+  <div class="links-card">
+    <div class="kicker">Official Links</div>
+    <h2>Connect &amp; Get Started</h2>
+    <p class="ar" style="color:var(--muted);margin-top:8px">كل الروابط الرسمية في مكان واحد</p>
+    <div class="link-grid">
+      <a class="link-btn lb-invite" id="cardInvite" href="#">
+        <span class="lic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A19 19 0 0 0 15.6 3l-.3.5a17 17 0 0 1 4.3 1.4A14 14 0 0 0 4.4 4.9 17 17 0 0 1 8.7 3.5L8.4 3a19 19 0 0 0-4.7 1.4C1.3 8.1.7 11.7 1 15.3a19 19 0 0 0 5.7 2.9l.5-.8c-.8-.3-1.6-.7-2.3-1.1l.5-.4a13 13 0 0 0 11.2 0l.5.4c-.7.4-1.5.8-2.3 1.1l.5.8a19 19 0 0 0 5.7-2.9c.4-4.2-.6-7.8-2.7-10.9ZM8.4 13.3c-.9 0-1.6-.8-1.6-1.8s.7-1.8 1.6-1.8 1.7.8 1.6 1.8c0 1-.7 1.8-1.6 1.8Zm7.2 0c-.9 0-1.6-.8-1.6-1.8s.7-1.8 1.6-1.8 1.7.8 1.6 1.8c0 1-.7 1.8-1.6 1.8Z"/></svg></span>
+        <span class="lt"><b>Invite Bot</b><span>أضف البوت لسيرفرك</span></span><span class="arrow">→</span></a>
+      <a class="link-btn lb-web" href="https://discordbackupbot.vercel.app/" target="_blank" rel="noopener">
+        <span class="lic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18" stroke-linecap="round"/></svg></span>
+        <span class="lt"><b>Official Website</b><span>discordbackupbot.vercel.app</span></span><span class="arrow">→</span></a>
+      <a class="link-btn lb-x" href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">
+        <span class="lic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.2 2h3.3l-7.2 8.3L23 22h-6.6l-5.2-6.8L5.3 22H2l7.7-8.8L1.5 2h6.8l4.7 6.2L18.2 2Zm-1.2 18h1.8L7.1 3.9H5.2L17 20Z"/></svg></span>
+        <span class="lt"><b>Official X (Twitter)</b><span>@KhaledQ84Ever</span></span><span class="arrow">→</span></a>
+      <a class="link-btn lb-support" id="supportBtn" href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">
+        <span class="lic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/><path d="m5 5 3 3m8-3-3 3M5 19l3-3m8 3-3-3" stroke-linecap="round"/></svg></span>
+        <span class="lt"><b>Support &amp; Contact</b><span>تواصل مع المطوّر</span></span><span class="arrow">→</span></a>
+    </div>
   </div>
+</div></section>
 
-  <div class="feature-grid">
-
-    <div class="feature">
-      <div class="feature-icon b">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-        </svg>
-      </div>
-      <h3>كل الرومات</h3>
-      <div class="en">Every channel</div>
-      <p>تيكست، فويس، ثريد، فوروم — مع كل الصلاحيات والكاتيقوريات وإعدادات السلو-مود.</p>
+<section class="block"><div class="wrap">
+  <div class="dev-card">
+    <div class="dev-av">K</div>
+    <div class="dev-meta">
+      <div class="lbl">👨‍💻 Developed &amp; Maintained by</div>
+      <b>@KhaledQ84Ever</b>
+      <a href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">x.com/KhaledQ84Ever ↗</a>
     </div>
-
-    <div class="feature">
-      <div class="feature-icon y">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/>
-        </svg>
-      </div>
-      <h3>كل رسالة</h3>
-      <div class="en">Every message</div>
-      <p>النص، الإمبيد، الريأكشن، الذكر، الردود، التعديلات، الوقت — وكلها قابلة للبحث.</p>
-    </div>
-
-    <div class="feature">
-      <div class="feature-icon r">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <path d="M21 15l-5-5L5 21"/>
-        </svg>
-      </div>
-      <h3>الصور والمرفقات</h3>
-      <div class="en">Images &amp; files</div>
-      <p>كل صورة وملف يتم تحميله للقرص قبل انتهاء روابط CDN — صورك تبقى عندك.</p>
-    </div>
-
-    <div class="feature">
-      <div class="feature-icon g">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-          <circle cx="9" cy="7" r="4"/>
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-        </svg>
-      </div>
-      <h3>الأعضاء والأدمنية</h3>
-      <div class="en">Members &amp; admins</div>
-      <p>قائمة كاملة بكل عضو: الأسماء، النِك، تاريخ الانضمام، الرولات، علامة الأدمن.</p>
-    </div>
-
-    <div class="feature">
-      <div class="feature-icon p">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/>
-        </svg>
-      </div>
-      <h3>الرولات والصلاحيات</h3>
-      <div class="en">Roles &amp; permissions</div>
-      <p>كل رول مع صلاحياته الكاملة، اللون، الترتيب، والأعضاء المنتمين له.</p>
-    </div>
-
-    <div class="feature">
-      <div class="feature-icon pk">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <polyline points="12 6 12 12 16 14"/>
-        </svg>
-      </div>
-      <h3>نسخ تلقائي</h3>
-      <div class="en">Auto-backups</div>
-      <p>استخدم <code style="background:#ecf0fe;padding:2px 7px;border-radius:6px;font-family:Inter,monospace;color:#5865f2;font-weight:800;">/schedule 24</code> — يأخذ نسخة تلقائياً كل N ساعة بدون تدخل.</p>
-    </div>
-
   </div>
-</section>
+</div></section>
 
-<!-- ─── COMMANDS ─── -->
-<div class="cmds-wrap">
-<section class="cmds" id="commands">
-  <div class="section-head">
-    <h2>الأوامر</h2>
-    <p>7 slash commands · all require Manage Server</p>
+<footer><div class="wrap foot-in">
+  <div class="foot-brand"><img src="logo-backup.png" alt="" />Backup Application</div>
+  <div class="foot-links">
+    <a href="#about">About</a><a href="#features">Features</a>
+    <a href="https://discordbackupbot.vercel.app/" target="_blank" rel="noopener">Website</a>
+    <a href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">X / Twitter</a>
+    <a href="https://github.com/khaledq84ever/discord-backup-bot" target="_blank" rel="noopener">GitHub</a>
   </div>
-  <div class="cmd-grid">
-
-    <div class="cmd" style="--accent:#5865f2; --accent-soft:#ecf0fe;">
-      <div class="cmd-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3v12m-5-5l5 5 5-5M5 21h14"/>
-        </svg>
-      </div>
-      <div>
-        <code>/backup</code>
-        <small>نسخة كاملة للسيرفر</small>
-      </div>
-    </div>
-
-    <div class="cmd" style="--accent:#d4a843; --accent-soft:#fefce8;">
-      <div class="cmd-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-      </div>
-      <div>
-        <code>/backup_channel</code>
-        <small>روم واحد فقط</small>
-      </div>
-    </div>
-
-    <div class="cmd" style="--accent:#1f9d55; --accent-soft:#ecfdf5;">
-      <div class="cmd-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h4l3-7 4 14 3-7h4"/></svg>
-      </div>
-      <div>
-        <code>/status</code>
-        <small>معلومات آخر نسخة</small>
-      </div>
-    </div>
-
-    <div class="cmd" style="--accent:#e8001c; --accent-soft:#fef2f2;">
-      <div class="cmd-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-      </div>
-      <div>
-        <code>/download</code>
-        <small>حمّل آخر نسخة .zip</small>
-      </div>
-    </div>
-
-    <div class="cmd" style="--accent:#7c3aed; --accent-soft:#f5f3ff;">
-      <div class="cmd-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      </div>
-      <div>
-        <code>/schedule</code>
-        <small>نسخ تلقائي كل N ساعة</small>
-      </div>
-    </div>
-
-    <div class="cmd" style="--accent:#db2777; --accent-soft:#fdf2f8;">
-      <div class="cmd-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      </div>
-      <div>
-        <code>/search</code>
-        <small>ابحث في الرسائل المحفوظة</small>
-      </div>
-    </div>
-
-  </div>
-</section>
-</div>
-
-<!-- ─── CTA ─── -->
-<div class="cta-wrap">
-<section class="cta">
-  <h2>احم سيرفرك الحين</h2>
-  <p>تشغيل ذاتي مجاني · يشتغل على Railway مع volume للحفظ الدائم</p>
-  <div class="btnrow">
-    <a class="btn btn-primary" href="https://github.com/khaledq84ever/discord-backup-bot">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.87 10.91.58.1.78-.25.78-.55v-1.94c-3.2.7-3.87-1.37-3.87-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.04-.71.08-.69.08-.69 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.18a10.93 10.93 0 0 1 5.74 0c2.2-1.49 3.16-1.18 3.16-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.15v3.18c0 .31.21.66.79.55C20.22 21.38 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
-      Source on GitHub
-    </a>
-    <a class="btn btn-ghost" href="https://railway.app">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="11" rx="2"/><path d="M8 6V4h8v2M3 11h18M7 17v3M17 17v3"/></svg>
-      Deploy on Railway
-    </a>
-  </div>
-</section>
-</div>
-
-<!-- ─── FOOTER ─── -->
-<footer>
-  <div class="footer-family">
-    <a href="https://github.com/khaledq84ever/discord-ai-bot" title="AI Chat Bot"><img src="/logo-ai.png" alt="AI Bot" style="opacity:0.55"></a>
-    <a href="https://github.com/khaledq84ever/discord-music-bot" title="Music Bot"><img src="/logo-music.png" alt="Music Bot" style="opacity:0.55"></a>
-    <a href="https://github.com/khaledq84ever/discord-backup-bot" title="BackUp Bot"><img src="/logo-backup.png" alt="BackUp Bot"></a>
-  </div>
-  <div>BackUp Bot — حماية كاملة لسيرفر ديسكورد</div>
-  <br>
-  <a class="credit" href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-    Programmed By @KhaledQ84Ever
-  </a>
-</footer>
+  <div class="foot-dev">Developed by <a href="https://x.com/KhaledQ84Ever" target="_blank" rel="noopener">@KhaledQ84Ever</a></div>
+  <div class="foot-copy">© 2026 Backup Application. All Rights Reserved.</div>
+</div></footer>
 
 <script>
-  // ── One-click invite. Users NEVER enter a token — they just pick their server. ──
-  // Paste the BackUp Bot's public Application ID here (Developer Portal → General Information).
-  const CLIENT_ID = "1509128697129734285";  // BackUp Bot Application ID
-  // View + Read History + Send + Embed + Attach + Manage Webhooks (archival + /download + /status)
-  const PERMISSIONS = "536988288";
+  const CLIENT_ID   = "1509128697129734285";   // BackUp Bot Application ID
+  const PERMISSIONS = "8";                       // Administrator (read every channel)
   function inviteUrl(){
-    return `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}`
-      + `&permissions=${PERMISSIONS}&scope=bot%20applications.commands`;
+    return "https://discord.com/oauth2/authorize?client_id=" + CLIENT_ID
+      + "&permissions=" + PERMISSIONS + "&scope=bot%20applications.commands";
   }
-  document.querySelectorAll('#addBtn,#addBtn2').forEach(btn=>{
-    btn.href = CLIENT_ID ? inviteUrl() : "#";
-    btn.addEventListener("click",(e)=>{
-      if(!CLIENT_ID){ e.preventDefault(); alert("⚠️ افتح web/index.html وحط Application ID في CLIENT_ID."); }
-    });
+  ["navInvite","heroInvite","cardInvite"].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.href = inviteUrl();
   });
+
+  var FEATURES = [
+    ["Channel Backup","نسخ الرومات"],["Role Backup","نسخ الرولات"],
+    ["Category Backup","نسخ التصنيفات"],["Permission Backup","نسخ الصلاحيات"],
+    ["Fast Restore","استعادة سريعة"],["Secure Storage","تخزين آمن"],
+    ["Easy Management","إدارة سهلة"]
+  ];
+  var CHK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var grid = document.getElementById("featGrid");
+  if(grid){
+    grid.innerHTML = FEATURES.map(function(f,i){
+      return '<div class="feat" style="animation:rise .7s '+(i*0.05)+'s both">'
+        + '<div class="chk">'+CHK+'</div><h4>'+f[0]+'</h4><div class="ar">'+f[1]+'</div></div>';
+    }).join("");
+    grid.querySelectorAll(".feat").forEach(function(c){
+      c.addEventListener("pointermove",function(e){
+        var r=c.getBoundingClientRect();
+        c.style.setProperty("--mx",((e.clientX-r.left)/r.width*100)+"%");
+      });
+    });
+  }
+
+  var btn = document.getElementById("langBtn");
+  if(btn){
+    btn.addEventListener("click",function(){
+      var en = document.documentElement.lang === "en";
+      document.documentElement.lang = en ? "ar" : "en";
+      document.documentElement.dir  = en ? "rtl" : "ltr";
+      btn.textContent = en ? "EN" : "AR";
+    });
+  }
 </script>
 </body>
 </html>
