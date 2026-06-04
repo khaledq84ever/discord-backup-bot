@@ -242,6 +242,9 @@ async def _admin_backup_task(guild: discord.Guild):
     """Run a full backup + zip for a guild as a background task (admin-triggered)."""
     if guild.id in in_flight:
         return
+    if restoring:
+        log.info("admin backup for %s deferred — a restore is in progress", guild.id)
+        return
     p = backup.Progress()
     in_flight[guild.id] = p
     try:
@@ -274,12 +277,15 @@ async def _h_admin_backup(request):
 
 async def _admin_restore_task(guild: discord.Guild, link: str, with_messages: bool):
     log.info("admin-triggered restore starting for %s from %s", guild.id, link[:60])
+    restoring.add(guild.id)
     try:
         rp = await restore_engine.restore_from_zip(link, guild, with_messages=with_messages)
         log.info("admin-triggered restore DONE for %s — roles=%s channels=%s msgs=%s err=%s",
                  guild.id, rp.roles, rp.channels, rp.messages, rp.error)
     except Exception as e:  # noqa: BLE001
         log.exception("admin restore failed for %s: %s", guild.id, e)
+    finally:
+        restoring.discard(guild.id)
 
 
 async def _h_admin_restore(request):
@@ -346,9 +352,9 @@ async def _h_admin_cmd(request):
 
     if do == "help":
         return web.json_response({
-            "actions": ["diag", "errors", "logs", "integrity_all", "backup",
-                        "backup_all", "dedup", "prune", "leave"],
-            "usage": "/admin/<secret>/cmd?do=<action>[&guild=<id>&n=<lines>&grep=<text>]",
+            "actions": ["diag", "scan", "errors", "logs", "integrity_all", "backup",
+                        "backup_all", "dedup", "prune", "leave", "verify_clone"],
+            "usage": "/admin/<secret>/cmd?do=<action>[&guild=&source=&target=&n=&grep=]",
         })
 
     def _integ_for(gid: int):
@@ -470,6 +476,44 @@ async def _h_admin_cmd(request):
         log.info("admin-triggered LEAVE guild %s (%s)", name, gid)
         return web.json_response({"status": "left", "guild": int(gid), "name": name})
 
+    if do == "verify_clone":
+        # Deep per-room check: did EVERY source room's messages land in the target?
+        # Read-only — back up the target first (do=backup&guild=<target>) so its DB
+        # reflects the restored content, then call this.
+        s_gid = request.query.get("source", "")
+        t_gid = request.query.get("target", "")
+        if not (s_gid.isdigit() and t_gid.isdigit()):
+            return web.json_response({"error": "source + target (guild ids) required"},
+                                     status=400)
+
+        def _counts(gid):
+            conn = storage.open_db(int(gid))
+            rows = conn.execute(
+                "SELECT channel_name, COUNT(*) FROM messages GROUP BY channel_name"
+            ).fetchall()
+            conn.close()
+            return {(r[0] or "?"): r[1] for r in rows}
+
+        src = await asyncio.to_thread(_counts, s_gid)
+        tgt = await asyncio.to_thread(_counts, t_gid)
+        rooms, full, partial, missing = [], 0, 0, 0
+        for name, sc in sorted(src.items(), key=lambda x: -x[1]):
+            tc = tgt.get(name, 0)
+            # restore skips system/content-less msgs, so ~70%+ replayed = full room.
+            if sc > 0 and tc == 0:
+                status = "missing"; missing += 1
+            elif tc >= max(1, int(sc * 0.7)):
+                status = "full"; full += 1
+            else:
+                status = "partial"; partial += 1
+            rooms.append({"room": name, "source": sc, "target": tc, "status": status})
+        return web.json_response({
+            "source": int(s_gid), "target": int(t_gid),
+            "summary": {"rooms_total": len(src), "full": full,
+                        "partial": partial, "missing": missing},
+            "rooms": rooms,
+        })
+
     return web.json_response({"error": f"unknown action '{do}'",
                               "hint": "do=help"}, status=400)
 
@@ -498,6 +542,10 @@ async def _start_webserver():
 
 # A single in-flight backup task per guild, so /backup can't be spammed.
 in_flight: dict[int, backup.Progress] = {}
+# Guilds currently being RESTORED. Backups (auto + admin) stand down while any
+# restore runs: a restore is event-loop-heavy (webhook replay), and running a
+# backup at the same time is what blocked the gateway heartbeat (the freeze).
+restoring: set[int] = set()
 # Auto-backup schedules, in hours, per guild.
 schedules: dict[int, int] = {}
 
@@ -622,6 +670,11 @@ async def on_guild_join(guild: discord.Guild):
 async def _auto_loop():
     """Background loop: re-runs /backup for every scheduled guild."""
     while True:
+        if restoring:
+            # A restore is running — don't compete for the event loop (avoids the
+            # heartbeat freeze). Re-check shortly instead of starting backups now.
+            await asyncio.sleep(30)
+            continue
         for guild_id, hours in list(schedules.items()):
             try:
                 guild = bot.get_guild(guild_id)
