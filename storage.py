@@ -64,7 +64,10 @@ def db_path(guild_id: int) -> str:
 
 
 def open_db(guild_id: int) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path(guild_id))
+    # check_same_thread=False so batch writes can be flushed via asyncio.to_thread
+    # (off the event loop) during backup — access is serialized (awaited one at a
+    # time), so there is no concurrent use.
+    conn = sqlite3.connect(db_path(guild_id), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(SCHEMA)

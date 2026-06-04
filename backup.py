@@ -199,58 +199,89 @@ async def _download_attachment(session: aiohttp.ClientSession,
         return None
 
 
+def _flush_batch(conn, batch_msgs, batch_atts) -> None:
+    """Synchronous DB write — run via asyncio.to_thread so the SQLite commit never
+    blocks the gateway heartbeat (heartbeat-block was disconnecting us mid-channel,
+    truncating big channels to ~300-500 msgs / ~10% of the server)."""
+    for row in batch_msgs:
+        storage.upsert_message(conn, row)
+    for row in batch_atts:
+        storage.upsert_attachment(conn, row)
+    conn.commit()
+
+
+# Transient errors worth resuming a channel on (gateway drop, CDN/API hiccup).
+_RESUMABLE = (discord.HTTPException, discord.DiscordServerError,
+              aiohttp.ClientError, asyncio.TimeoutError, ConnectionError, OSError)
+
+
 async def _scrape_channel(channel, conn, session, attachments_dir,
                           progress: Progress) -> None:
-    """Pull every message we don't already have; download attachments."""
+    """Pull EVERY message we don't already have (day 1 -> now), download attachments.
+
+    Resilient + complete:
+      - resumes from the last saved message id, so a gateway drop mid-channel does
+        NOT lose the channel — it retries and continues where it stopped;
+      - flushes DB batches OFF the event loop (asyncio.to_thread) and yields, so a
+        big channel can't block the heartbeat and trigger a disconnect;
+      - no message cap (limit=None) → full history.
+    """
     progress.current_channel = channel.name
-    after_id = storage.newest_message_id(conn, channel.id)
-    after = discord.Object(id=after_id) if after_id else None
     limit = None if config.MAX_MESSAGES_PER_CHANNEL == 0 else \
         config.MAX_MESSAGES_PER_CHANNEL
+    total_new = 0
 
-    count = 0
-    batch_msgs, batch_atts = [], []
-    try:
-        async for m in channel.history(limit=limit, after=after, oldest_first=True):
-            if progress.cancelled:
-                break
-            batch_msgs.append(_message_row(m, channel.name))
-            for a in m.attachments:
-                local = await _download_attachment(session, a, attachments_dir)
-                if local:
-                    progress.bytes += a.size
-                batch_atts.append({
-                    "id":         a.id,
-                    "message_id": m.id,
-                    "channel_id": channel.id,
-                    "filename":   a.filename,
-                    "url":        a.url,
-                    "size":       a.size,
-                    "local_path": local,
-                    "content_type": a.content_type,
-                })
-                progress.attachments += 1
-            count += 1
-            progress.messages += 1
-            # Flush every 200 messages
-            if len(batch_msgs) >= 200:
-                for row in batch_msgs:
-                    storage.upsert_message(conn, row)
-                for row in batch_atts:
-                    storage.upsert_attachment(conn, row)
-                conn.commit()
-                batch_msgs.clear()
-                batch_atts.clear()
-    except discord.Forbidden:
-        log.info("no access to #%s, skipping", channel.name)
-        progress.skipped.append(channel.name)
-    finally:
-        for row in batch_msgs:
-            storage.upsert_message(conn, row)
-        for row in batch_atts:
-            storage.upsert_attachment(conn, row)
-        conn.commit()
-    log.info("channel #%s: +%d new messages", channel.name, count)
+    for attempt in range(8):                 # resume up to 8x across disconnects
+        if progress.cancelled:
+            break
+        # Resume point: newest id we've already stored for this channel.
+        after_id = storage.newest_message_id(conn, channel.id)
+        after = discord.Object(id=after_id) if after_id else None
+        batch_msgs, batch_atts = [], []
+        try:
+            async for m in channel.history(limit=limit, after=after, oldest_first=True):
+                if progress.cancelled:
+                    break
+                batch_msgs.append(_message_row(m, channel.name))
+                for a in m.attachments:
+                    local = await _download_attachment(session, a, attachments_dir)
+                    if local:
+                        progress.bytes += a.size
+                    batch_atts.append({
+                        "id":         a.id,
+                        "message_id": m.id,
+                        "channel_id": channel.id,
+                        "filename":   a.filename,
+                        "url":        a.url,
+                        "size":       a.size,
+                        "local_path": local,
+                        "content_type": a.content_type,
+                    })
+                    progress.attachments += 1
+                total_new += 1
+                progress.messages += 1
+                # Flush every 200 messages, OFF the loop, then yield to the heartbeat.
+                if len(batch_msgs) >= 200:
+                    await asyncio.to_thread(_flush_batch, conn, batch_msgs, batch_atts)
+                    batch_msgs, batch_atts = [], []
+                    await asyncio.sleep(0)
+            # Reached the end of history cleanly — flush remainder and we're done.
+            await asyncio.to_thread(_flush_batch, conn, batch_msgs, batch_atts)
+            break
+        except discord.Forbidden:
+            log.info("no access to #%s, skipping", channel.name)
+            progress.skipped.append(channel.name)
+            await asyncio.to_thread(_flush_batch, conn, batch_msgs, batch_atts)
+            return
+        except _RESUMABLE as e:
+            # Save what we got, then retry — the next pass resumes from the new
+            # newest-id, so we never lose or re-fetch what's already stored.
+            await asyncio.to_thread(_flush_batch, conn, batch_msgs, batch_atts)
+            log.warning("channel #%s interrupted (%s) — resuming (attempt %d/8)",
+                        channel.name, type(e).__name__, attempt + 1)
+            await asyncio.sleep(min(2 ** attempt, 20))
+            continue
+    log.info("channel #%s: +%d new messages", channel.name, total_new)
 
 
 # --------------------------------------------------------------------------- #
