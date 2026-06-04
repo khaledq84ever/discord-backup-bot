@@ -314,6 +314,53 @@ def _fmt_size(n: int) -> str:
     return f"{f:.1f} {units[i]}"
 
 
+import json as _json
+
+
+def _integrity_of(run: Optional[dict]) -> Optional[dict]:
+    """Parse the persisted integrity dict from a backup run row, if present."""
+    if not run:
+        return None
+    raw = run.get("integrity_json")
+    if not raw:
+        return None
+    try:
+        return _json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+def _integrity_emoji(score: int) -> str:
+    return "🟢" if score >= 95 else "🟡" if score >= 75 else "🔴"
+
+
+def _integrity_gaps(integ: dict) -> list:
+    """Human-readable list of what lowered the score (empty = perfect)."""
+    gaps = []
+    skipped = integ.get("channels_skipped") or []
+    if skipped:
+        shown = ", ".join("#" + s for s in skipped[:6])
+        more = f" +{len(skipped) - 6} more" if len(skipped) > 6 else ""
+        gaps.append(f"{len(skipped)} channel(s) NOT read (need Administrator): {shown}{more}")
+    if integ.get("attachments_failed"):
+        gaps.append(f"{integ['attachments_failed']} attachment(s) failed (CDN link expired)")
+    if integ.get("attachments_oversize"):
+        gaps.append(f"{integ['attachments_oversize']} attachment(s) skipped (over size limit)")
+    return gaps
+
+
+def _integrity_field_value(integ: dict) -> str:
+    score = int(integ.get("score", 0))
+    bar = "█" * int(20 * score / 100) + "░" * (20 - int(20 * score / 100))
+    head = (f"{_integrity_emoji(score)} **{score}%** complete\n`{bar}`\n"
+            f"channels {integ.get('channels_read', 0)}/{integ.get('channels_total', 0)} · "
+            f"files {integ.get('attachments_stored', 0)}/{integ.get('attachments_total', 0)}")
+    gaps = _integrity_gaps(integ)
+    if gaps:
+        head += "\n⚠️ " + "\n⚠️ ".join(gaps)
+    return head
+
+
 import re as _re
 # Bare custom-emoji id tokens (`:899471179822293042:`) that Discord can't render
 # inside an embed — strip them so channel names read cleanly.
@@ -467,6 +514,13 @@ def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
     if not done and p.current_channel:
         e.add_field(name="🔄 Now archiving",
                     value=f"#{_clean_channel_name(p.current_channel)}", inline=False)
+    # Integrity score (0–100%) — how complete this backup is + what's missing.
+    if done:
+        integ = p.integrity()
+        e.add_field(name="🛡️ نسبة الاكتمال / Integrity",
+                    value=_integrity_field_value(integ), inline=False)
+        e.color = (0x57F287 if integ["score"] >= 95
+                   else 0xFEE75C if integ["score"] >= 75 else 0xED4245)
     # LOUD warning when channels were skipped — this is THE reason a backup comes
     # out incomplete (e.g. "only 207 messages"). Show the count + the 1-click admin
     # link so the user fixes it instead of trusting a partial backup.
@@ -691,13 +745,32 @@ async def dedup_cmd(interaction: discord.Interaction, all_servers: bool = False)
 # --------------------------------------------------------------------------- #
 #  /report — copyable plain-text status (tap the code block to copy & paste here)
 # --------------------------------------------------------------------------- #
-@tree.command(name="report",
-              description="تقرير نصي للنسخ بضغطة / copyable text report (tap to copy)")
-async def report_cmd(interaction: discord.Interaction):
-    if not interaction.guild:
-        return await interaction.response.send_message("server-only.", ephemeral=True)
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    g = interaction.guild
+# Full command catalog — single source of truth for /help and /copy so the two
+# never drift. (name, args, bilingual description)
+COMMANDS = [
+    ("/backup", "", "نسخة كاملة للسيرفر / full server backup"),
+    ("/backup_channel", "<channel>", "روم واحد فقط / one channel only"),
+    ("/restore", "<link|source> [target]", "استرجاع سيرفر من نسخة / rebuild a server from a backup"),
+    ("/status", "", "معلومات آخر نسخة / last backup info"),
+    ("/stats", "", "إحصائيات مباشرة / live storage stats"),
+    ("/report", "", "تقرير نصي ينسخ بضغطة / copyable text report"),
+    ("/copy", "", "انسخ كل رسائل البوت / copy ALL bot info as text"),
+    ("/dedup", "[all_servers]", "توفير مساحة بحذف المكرر / reclaim space (dedup)"),
+    ("/download", "", "حمّل آخر .zip / fetch the latest archive"),
+    ("/schedule", "<hours>", "نسخ تلقائي كل ساعات / auto-backup every N hours"),
+    ("/search", "<query>", "ابحث في الرسائل المؤرشفة / search archived messages"),
+    ("/help", "", "هذه القائمة / this command list"),
+]
+
+
+def _commands_text() -> str:
+    """Plain-text list of every command — copyable (used by /help and /copy)."""
+    rows = [f"{n} {a}".strip() + f"  —  {d}" for n, a, d in COMMANDS]
+    return "BackUp Bot — commands:\n" + "\n".join(rows)
+
+
+async def _report_lines(g: discord.Guild) -> list:
+    """Build the copyable status report for a guild (shared by /report + /copy)."""
     me = g.me
     admin = bool(me and me.guild_permissions.administrator)
     text_chs = [c for c in g.channels if isinstance(c, discord.TextChannel)]
@@ -708,7 +781,6 @@ async def report_cmd(interaction: discord.Interaction):
     run = await asyncio.to_thread(storage.latest_run, conn)
 
     def _totals():
-        # TOTAL stored across ALL runs — not the last run's incremental delta.
         m = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
         a = conn.execute("SELECT COUNT(*) FROM attachments").fetchone()[0]
         return m, a
@@ -732,6 +804,14 @@ async def report_cmd(interaction: discord.Interaction):
             f"last_backup_at  : {run.get('ended_at') or run.get('started_at') or '-'}",
             f"last_run_added  : +{run.get('messages', 0)} msgs (incremental)",
         ]
+        integ = _integrity_of(run)
+        if integ:
+            lines.append(
+                f"integrity_score : {integ.get('score', 0)}%   "
+                f"(channels {integ.get('channels_read',0)}/{integ.get('channels_total',0)}, "
+                f"files {integ.get('attachments_stored',0)}/{integ.get('attachments_total',0)})")
+            for gap in _integrity_gaps(integ):
+                lines.append(f"  - {gap}")
         if run.get("error"):
             lines.append(f"last_error      : {run['error']}")
     else:
@@ -741,10 +821,59 @@ async def report_cmd(interaction: discord.Interaction):
         f"on_disk        : {_fmt_size(size)}",
         f"download_link  : {link}",
     ]
-    body = "\n".join(lines)
+    return lines
+
+
+@tree.command(name="report",
+              description="تقرير نصي للنسخ بضغطة / copyable text report (tap to copy)")
+async def report_cmd(interaction: discord.Interaction):
+    if not interaction.guild:
+        return await interaction.response.send_message("server-only.", ephemeral=True)
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    body = "\n".join(await _report_lines(interaction.guild))
     # Fenced code block → Discord shows a one-tap "Copy" on the whole block.
     await interaction.followup.send(
         "📋 انسخ كل هذا وارسله / tap & copy all of this:\n```\n" + body + "\n```")
+
+
+@tree.command(name="copy",
+              description="انسخ كل معلومات البوت كنص / copy ALL the bot's info as text")
+async def copy_cmd(interaction: discord.Interaction):
+    """One tap-to-copy block with EVERYTHING: full command list + (in a server)
+    the complete status report. Solves 'I can't copy the bot's embed messages' —
+    embeds aren't selectable on mobile, but a fenced code block has a Copy button."""
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    parts = [_commands_text()]
+    if interaction.guild:
+        parts.append("\n" + "\n".join(await _report_lines(interaction.guild)))
+    body = "\n".join(parts)
+    # Discord messages cap at 2000 chars — chunk the code block if needed.
+    chunks = _chunk_for_codeblock(body)
+    first = True
+    for ch in chunks:
+        content = ("📋 انسخ كل شيء / tap & copy everything:\n" if first else "") \
+            + "```\n" + ch + "\n```"
+        if first:
+            await interaction.followup.send(content, ephemeral=True)
+            first = False
+        else:
+            await interaction.followup.send(content, ephemeral=True)
+
+
+def _chunk_for_codeblock(text: str, limit: int = 1800) -> list:
+    """Split text on line boundaries so each piece fits in a fenced code block
+    under Discord's 2000-char message cap."""
+    out, cur = [], ""
+    for line in text.split("\n"):
+        if len(cur) + len(line) + 1 > limit:
+            if cur:
+                out.append(cur)
+            cur = line
+        else:
+            cur = (cur + "\n" + line) if cur else line
+    if cur:
+        out.append(cur)
+    return out or [""]
 
 
 # --------------------------------------------------------------------------- #
@@ -945,25 +1074,25 @@ async def search_cmd(interaction: discord.Interaction, query: str):
 # --------------------------------------------------------------------------- #
 @tree.command(name="help", description="الأوامر / Commands")
 async def help_cmd(interaction: discord.Interaction):
+    desc = "\n".join(f"**{n}** `{a}` — {d}" if a else f"**{n}** — {d}"
+                     for n, a, d in COMMANDS)
     embed = discord.Embed(
         title="💾 BackUp Bot — الأوامر / Commands",
         description=(
-            "**/backup** — نسخة كاملة للسيرفر / full server backup\n"
-            "**/backup_channel** `<channel>` — روم واحد فقط / one channel only\n"
-            "**/status** — معلومات آخر نسخة / last backup info\n"
-            "**/download** — حمّل آخر `.zip` / fetch the latest archive\n"
-            "**/schedule** `<hours>` — نسخ تلقائي / auto-backup every N h\n"
-            "**/search** `<query>` — ابحث في الرسائل / search archived msgs\n\n"
+            desc + "\n\n"
             "Backups capture **everything**: channels, roles, members "
             "(incl. admins), every message, embeds, reactions, mentions, "
             "and downloaded attachments.\n\n"
-            "**Required intents** (Developer Portal → Bot):\n"
-            "• Server Members Intent\n"
-            "• Message Content Intent"
+            "💡 **/copy** = انسخ كل هذا كنص / copy all of this as text."
         ),
         color=0x5865F2,
     )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    # Embeds aren't selectable on mobile — also send a tap-to-copy code block so
+    # the full command list can be copied.
+    await interaction.response.send_message(
+        embed=embed,
+        content="📋 انسخ الأوامر / tap & copy:\n```\n" + _commands_text() + "\n```",
+        ephemeral=True)
 
 
 if __name__ == "__main__":

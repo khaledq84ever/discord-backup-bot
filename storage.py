@@ -210,15 +210,17 @@ def open_db(guild_id: int) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(SCHEMA)
-    # Migration: add sha256 to attachments tables created before content-hash dedup.
-    # MUST run before any index on sha256 (executescript above no longer references
-    # the column, so an old DB without it doesn't break on open).
-    try:
-        conn.execute("ALTER TABLE attachments ADD COLUMN sha256 TEXT")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
-    # Now the column is guaranteed to exist — safe to index it.
+    # Migrations: add any columns introduced after the original schema shipped, so
+    # old per-guild DBs transparently gain them. Must run BEFORE any index that
+    # references a new column (SCHEMA above no longer indexes new columns directly).
+    for table, cols in _MIGRATIONS.items():
+        for col, decl in cols.items():
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # column already exists
+    # Now the sha256 column is guaranteed to exist — safe to index it.
     try:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_attachments_sha ON attachments(sha256)")
@@ -270,9 +272,18 @@ CREATE TABLE IF NOT EXISTS backup_runs (
     messages   INTEGER DEFAULT 0,
     attachments INTEGER DEFAULT 0,
     bytes      INTEGER DEFAULT 0,
-    error      TEXT
+    error      TEXT,
+    integrity_json TEXT
 );
 """
+
+
+# Columns added after the original schema shipped — applied on every open_db so
+# old per-guild DBs migrate transparently. (col_name -> "TYPE" definition.)
+_MIGRATIONS = {
+    "attachments": {"sha256": "TEXT"},
+    "backup_runs": {"integrity_json": "TEXT"},
+}
 
 
 def newest_message_id(conn: sqlite3.Connection, channel_id: int) -> Optional[int]:
@@ -319,14 +330,15 @@ def start_run(conn: sqlite3.Connection) -> int:
 
 def finish_run(conn: sqlite3.Connection, run_id: int, *, channels: int,
                messages: int, attachments: int, byte_count: int,
-               error: Optional[str] = None) -> None:
+               error: Optional[str] = None,
+               integrity_json: Optional[str] = None) -> None:
     conn.execute(
         """UPDATE backup_runs
            SET ended_at = ?, channels = ?, messages = ?, attachments = ?,
-               bytes = ?, error = ?
+               bytes = ?, error = ?, integrity_json = ?
            WHERE id = ?""",
         (time.strftime("%Y-%m-%dT%H:%M:%S"), channels, messages, attachments,
-         byte_count, error, run_id),
+         byte_count, error, integrity_json, run_id),
     )
     conn.commit()
 
@@ -334,14 +346,14 @@ def finish_run(conn: sqlite3.Connection, run_id: int, *, channels: int,
 def latest_run(conn: sqlite3.Connection) -> Optional[dict]:
     r = conn.execute(
         """SELECT id, started_at, ended_at, channels, messages, attachments,
-                  bytes, error
+                  bytes, error, integrity_json
            FROM backup_runs ORDER BY id DESC LIMIT 1"""
     ).fetchone()
     if not r:
         return None
     return dict(zip(
         ["id", "started_at", "ended_at", "channels", "messages",
-         "attachments", "bytes", "error"], r))
+         "attachments", "bytes", "error", "integrity_json"], r))
 
 
 # --------------------------------------------------------------------------- #

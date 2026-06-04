@@ -35,9 +35,40 @@ class Progress:
     error: Optional[str] = None
     cancelled: bool = False
     skipped: list = field(default_factory=list)   # channels denied (no access)
+    attachments_stored: int = 0     # downloaded successfully
+    attachments_failed: int = 0     # download errored (CDN expired / network)
+    attachments_oversize: int = 0   # skipped — bigger than MAX_ATTACHMENT_MB
 
     def elapsed(self) -> float:
         return time.time() - self.started
+
+    def integrity(self) -> dict:
+        """A 0–100% confidence score for how COMPLETE this backup is, plus the
+        gaps that lowered it. Channel coverage is weighted heaviest (that's where
+        messages live); attachment success is the rest.
+
+        score = 100·channel_pct                       (no attachments seen)
+              = 100·(0.7·channel_pct + 0.3·attach_pct) (otherwise)
+        """
+        ct = self.channels_total or 0
+        read = max(0, ct - len(self.skipped))
+        channel_pct = (read / ct) if ct else 1.0
+        at = self.attachments or 0
+        attach_pct = (self.attachments_stored / at) if at else 1.0
+        if at:
+            score = 100.0 * (0.7 * channel_pct + 0.3 * attach_pct)
+        else:
+            score = 100.0 * channel_pct
+        return {
+            "score":               round(score),
+            "channels_total":      ct,
+            "channels_read":       read,
+            "channels_skipped":    list(self.skipped),
+            "attachments_total":   at,
+            "attachments_stored":  self.attachments_stored,
+            "attachments_failed":  self.attachments_failed,
+            "attachments_oversize": self.attachments_oversize,
+        }
 
 
 # --------------------------------------------------------------------------- #
@@ -259,6 +290,11 @@ async def _scrape_channel(channel, conn, session,
                     local, sha = await _download_attachment(session, a, channel.guild.id)
                     if local:
                         progress.bytes += a.size
+                        progress.attachments_stored += 1
+                    elif a.size > config.MAX_ATTACHMENT_MB * 1024 * 1024:
+                        progress.attachments_oversize += 1
+                    else:
+                        progress.attachments_failed += 1
                     batch_atts.append({
                         "id":         a.id,
                         "message_id": m.id,
@@ -370,12 +406,14 @@ async def run_backup(guild: discord.Guild, progress: Progress,
                 log.warning("channel %s failed: %s", getattr(ch, "name", "?"), e)
             progress.channels_done += 1
 
+    integrity = progress.integrity()
     storage.finish_run(conn, run_id,
                        channels=progress.channels_done,
                        messages=progress.messages,
                        attachments=progress.attachments,
                        byte_count=progress.bytes,
-                       error=progress.error)
+                       error=progress.error,
+                       integrity_json=json.dumps(integrity, ensure_ascii=False))
     run = storage.latest_run(conn)
     conn.close()
 
