@@ -640,36 +640,55 @@ async def on_guild_join(guild: discord.Guild):
         if ch is None:
             return
         e = discord.Embed(
-            title="💾 BackUp Bot — أهلاً فيك! / Thanks for adding me!",
-            description=("أحفظ سيرفرك بالكامل: كل الرسائل، الرومات، الرولات، الأعضاء، والصور.\n"
-                         "I archive your whole server — every message, channel, role, member & file."),
-            color=0x5865F2, url=WELCOME_URL)
+            title="🛡️  BackUp Bot — أهلاً فيك! / Welcome!",
+            description=(
+                "**أحفظ سيرفرك بالكامل وأقدر أنسخه لسيرفر ثاني.**\n"
+                "*I back up your whole server — and can clone it into another one.*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"),
+            color=0xE8001C, url=WELCOME_URL)
+        if me.display_avatar:
+            e.set_thumbnail(url=me.display_avatar.url)
+        # Step 1 — the one thing the owner must do.
         e.add_field(
-            name="🚀 طريقة الاستخدام / How to use",
-            value=("**1.** فعّل صلاحية **Administrator** لرول البوت عشان يقرأ كل الرومات\n"
-                   "Give my role **Administrator** so I can read every channel\n"
-                   "**2.** `/backup` — نسخة كاملة للسيرفر / full server backup\n"
-                   "**3.** `/download` — رابط تحميل النسخة / download link\n"
-                   "**4.** `/restore link:<url>` — استعد/انسخ سيرفر / restore or clone"),
+            name="①  أعطني Administrator / Give me Admin",
+            value=("عشان أقرأ **كل** روم بدون نقص.\n"
+                   "so I can read **every** channel with no gaps."),
             inline=False)
-        # If I wasn't added with Administrator, surface a one-click re-invite link
-        # that requests it — a bot can't grant itself admin, so this is the only fix.
+        # Core commands, each explained simply in both languages.
+        e.add_field(
+            name="②  الأوامر الأساسية / Core commands",
+            value=(
+                "💾 **`/backup`** — نسخة كاملة للسيرفر / full server backup\n"
+                "📥 **`/download`** — رابط تحميل النسخة / get the download link\n"
+                "♻️ **`/restore`** — استعد أو انسخ سيرفر (رابط أو ملف) / restore or "
+                "clone a server (link **or** uploaded file)\n"
+                "📊 **`/status`** · **`/stats`** — حالة النسخة / backup status\n"
+                "🔎 **`/search`** — دوّر بالرسائل المحفوظة / search saved messages\n"
+                "⏰ **`/schedule`** — نسخ تلقائي / automatic backups\n"
+                "❓ **`/help`** — كل الأوامر / every command"),
+            inline=False)
+        # If added without admin, the one-click fix.
         if not me.guild_permissions.administrator:
             invite = config.invite_url()
             if invite:
                 e.add_field(
-                    name="⚠️ مهم / Important — I need Administrator",
-                    value=("ماعندي Administrator، فبيطلع لك رومات ناقصة بالنسخة.\n"
-                           "I lack Administrator, so some channels will be skipped.\n"
-                           f"➡️ [اضغط لإعطائي Administrator / Click to grant me Admin]({invite})\n"
-                           "(أو فعّلها يدوياً من Server Settings → Roles)"),
+                    name="⚠️  محتاج Administrator / I need Admin",
+                    value=(f"➡️ **[اضغط هنا / Click here]({invite})**\n"
+                           "بدونها بتطلع رومات ناقصة. / without it, channels are skipped."),
                     inline=False)
         e.add_field(
-            name="📋 كل الأوامر / All commands",
-            value="`/backup` · `/download` · `/restore` · `/status` · `/stats` · `/schedule` · `/search` · `/help`",
+            name="✅ مميزات / Highlights",
+            value=("• نسخ **كامل** — رسائل، صور، رولات، رومات / **full** clone — messages, "
+                   "images, roles, rooms\n"
+                   "• ملف سيرفرك **خاص** فيك / your server's files stay **private**\n"
+                   "• يكمل لو انقطع / **resumes** if interrupted"),
             inline=False)
-        e.add_field(name="🌐 الموقع / Website", value=WELCOME_URL, inline=False)
-        e.set_footer(text="تحتاج صلاحية Manage Server · Manage Server required")
+        e.add_field(
+            name="🌐",
+            value=(f"[الموقع / Website]({WELCOME_URL})  ·  "
+                   "Programmed by **[@KhaledQ84Ever](https://x.com/KhaledQ84Ever)**"),
+            inline=False)
+        e.set_footer(text="تحتاج Manage Server للأوامر · Manage Server required to run commands")
         await ch.send(embed=e)
         log.info("sent welcome to %s", guild.id)
     except Exception as ex:  # noqa: BLE001
