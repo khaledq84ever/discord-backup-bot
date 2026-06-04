@@ -67,8 +67,27 @@ def _latest_link(guild_id: int) -> Optional[str]:
     return f"https://{_PUBLIC_DOMAIN}/latest/{_guild_token(guild_id)}/{guild_id}"
 
 
+# Shield icon — used as the bot avatar and as the embed thumbnail.
+_ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "assets", "logos", "01-backupbot-512.png")
+
+
+def _icon_url() -> Optional[str]:
+    """Public URL to the shield icon, served by our own web server."""
+    if not _PUBLIC_DOMAIN:
+        return None
+    return f"https://{_PUBLIC_DOMAIN}/icon.png"
+
+
 async def _h_health(request):
     return web.Response(text="BackUp Bot — OK")
+
+
+async def _h_icon(request):
+    """Serve the shield icon so embeds can show it as a thumbnail."""
+    if os.path.isfile(_ICON_PATH):
+        return web.FileResponse(_ICON_PATH, headers={"Cache-Control": "public, max-age=86400"})
+    return web.Response(status=404, text="no icon")
 
 
 async def _h_latest(request):
@@ -107,6 +126,7 @@ async def _h_download(request):
 async def _start_webserver():
     app = web.Application(client_max_size=0)
     app.router.add_get("/", _h_health)
+    app.router.add_get("/icon.png", _h_icon)
     app.router.add_get("/latest/{token}/{gid}", _h_latest)
     app.router.add_get("/dl/{token}/{gid}/{fname}", _h_download)
     runner = web.AppRunner(app)
@@ -141,6 +161,15 @@ async def on_ready():
     except Exception as e:                # noqa: BLE001
         log.warning("command sync issue: %s", e)
     log.info("Logged in as %s — in %d guild(s).", bot.user, len(bot.guilds))
+    # Set the bot's avatar to the shield icon — once, only if none is set yet,
+    # so we never hit Discord's 2-changes/hour avatar rate limit on restarts.
+    try:
+        if bot.user.avatar is None and os.path.isfile(_ICON_PATH):
+            with open(_ICON_PATH, "rb") as fh:
+                await bot.user.edit(avatar=fh.read())
+            log.info("bot avatar set to shield icon")
+    except Exception as e:  # noqa: BLE001
+        log.info("avatar set skipped: %s", e)
     global _web_started
     if not _web_started:
         _web_started = True
@@ -295,6 +324,28 @@ async def backup_cmd(interaction: discord.Interaction, force: bool = False):
     await interaction.edit_original_response(
         embed=_progress_embed(interaction.guild, progress, done=True,
                               zip_path=zip_path, zip_size=zip_size))
+    # Clean, direct summary the user asked for: just the link + last backup file.
+    link = _latest_link(interaction.guild.id)
+    await interaction.followup.send(
+        embed=_summary_embed(interaction.guild, zip_path, zip_size, link))
+
+
+def _summary_embed(guild: discord.Guild, zip_path: str, zip_size: int,
+                   link: Optional[str]) -> discord.Embed:
+    """Clean post-backup card: latest-backup link + last snapshot file only."""
+    e = discord.Embed(title="📊 آخر نسخة احتياطية / Latest backup",
+                       color=0x57F287)
+    icon = _icon_url()
+    if icon:
+        e.set_thumbnail(url=icon)
+    if link:
+        e.add_field(name="🔗 رابط سيرفرك / Your server's link",
+                    value=link, inline=False)
+    e.add_field(name="📦 آخر ملف نسخة / Last backup file",
+                value=f"`{os.path.basename(zip_path)}` ({_fmt_size(zip_size or 0)})",
+                inline=False)
+    e.set_footer(text="رابط خاص بسيرفرك · private to this server · أو استخدم /download")
+    return e
 
 
 def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
@@ -307,6 +358,9 @@ def _progress_embed(guild: discord.Guild, p: backup.Progress, *,
     title = "✅ اكتمل النسخ / Backup complete" if done \
             else "💾 جارٍ النسخ / Backup running"
     e = discord.Embed(title=title, color=0x57F287 if done else 0x5865F2)
+    icon = _icon_url()
+    if icon:
+        e.set_thumbnail(url=icon)
     e.add_field(name="📁 Server", value=guild.name, inline=False)
     e.add_field(name="📊 Progress",
                 value=f"`{bar}` {pct:.0f}%\n"
