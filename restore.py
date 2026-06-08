@@ -335,9 +335,16 @@ async def _replay_send(channel, wh, *, files=None, tries: int = 5, **kwargs):
                 return False, wh        # permanent (bad content/embed) — skip msg
             await asyncio.sleep(delay)  # 429 (incl. Cloudflare 1015) / 5xx — back off
         except _RETRYABLE:
-            # connection dropped — the webhook's session may be dead, recreate it
+            # connection dropped — the webhook's session may be dead, recreate it.
+            # Delete the old one first (best-effort) so repeated disconnects in one
+            # channel don't leak webhooks toward Discord's ~15-per-channel cap.
+            old = wh
             try:
                 wh = await channel.create_webhook(name="BackUp Restore")
+                try:
+                    await old.delete()
+                except Exception:        # noqa: BLE001 — already gone / no perms
+                    pass
             except discord.HTTPException:
                 pass
             await asyncio.sleep(delay)
