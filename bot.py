@@ -1181,6 +1181,7 @@ COMMANDS = [
     ("/download", "", "حمّل آخر .zip / fetch the latest archive"),
     ("/schedule", "<hours>", "نسخ تلقائي كل ساعات / auto-backup every N hours"),
     ("/search", "<query>", "ابحث في الرسائل المؤرشفة / search archived messages"),
+    ("/clear", "[channel] [amount]", "امسح رسائل روم / clear a channel's messages"),
     ("/help", "", "هذه القائمة / this command list"),
 ]
 
@@ -1499,6 +1500,102 @@ async def search_cmd(interaction: discord.Interaction, query: str):
                           color=0x5865F2)
     embed.set_footer(text=f"Top {len(rows)} matches")
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /clear — wipe messages in a channel (with confirmation)
+# --------------------------------------------------------------------------- #
+class _ClearConfirm(discord.ui.View):
+    """Yes/No confirmation for the destructive /clear command."""
+
+    def __init__(self, channel: discord.TextChannel, amount: int | None,
+                 author_id: int):
+        super().__init__(timeout=30)
+        self.channel = channel
+        self.amount = amount          # None = wipe the whole channel
+        self.author_id = author_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "هذا الزر مو إلك / not your button.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="نعم احذف / Yes, clear",
+                       style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def confirm(self, interaction: discord.Interaction,
+                      button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content="⏳ يحذف / clearing…", view=self)
+        ch = self.channel
+        try:
+            if self.amount is not None:
+                deleted = await ch.purge(limit=self.amount)
+                await interaction.followup.send(
+                    f"✅ انحذفت **{len(deleted)}** رسالة من {ch.mention} / "
+                    f"deleted **{len(deleted)}** messages.", ephemeral=True)
+            else:
+                # Full wipe: clone the channel (keeps name/perms/position) and
+                # delete the original — far faster than purging tens of
+                # thousands of messages one bulk batch at a time.
+                new_ch = await ch.clone(
+                    reason=f"/clear by {interaction.user}")
+                await new_ch.edit(position=ch.position)
+                await ch.delete(reason=f"/clear by {interaction.user}")
+                await interaction.followup.send(
+                    f"✅ انمسح الروم بالكامل / channel fully cleared → "
+                    f"{new_ch.mention}", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "⛔ ماعندي صلاحية / I need **Manage Messages** "
+                "(and **Manage Channels** for a full wipe).", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(
+                f"💥 فشل / failed: `{e}`", ephemeral=True)
+        self.stop()
+
+    @discord.ui.button(label="إلغاء / Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction,
+                     button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content="❎ تم الإلغاء / cancelled.", view=self)
+        self.stop()
+
+
+@tree.command(name="clear",
+              description="امسح رسائل روم / Clear messages in a channel")
+@app_commands.describe(
+    channel="الروم (افتراضي: الحالي) / channel (default: current)",
+    amount="عدد الرسائل، فاضي = الروم كامل / how many, blank = whole channel")
+async def clear_cmd(interaction: discord.Interaction,
+                    channel: discord.TextChannel | None = None,
+                    amount: app_commands.Range[int, 1, 1000] | None = None):
+    if not interaction.guild:
+        return
+    if not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+    ch = channel or interaction.channel
+    if not isinstance(ch, discord.TextChannel):
+        return await interaction.response.send_message(
+            "هذا الأمر للرومات النصية فقط / text channels only.", ephemeral=True)
+    scope = (f"آخر **{amount}** رسالة / the last **{amount}** messages"
+             if amount is not None
+             else "**كل** الرسائل / **ALL** messages")
+    warn = ("" if amount is not None
+            else "\n⚠️ المسح الكامل يعيد إنشاء الروم (آي دي جديد) / "
+                 "a full wipe re-creates the channel (new ID).")
+    await interaction.response.send_message(
+        f"🗑️ راح تنحذف {scope} من {ch.mention}.{warn}\n"
+        "💡 سوّي **/backup_channel** قبل الحذف لو تريد نسخة / "
+        "back it up first if you want a copy.",
+        view=_ClearConfirm(ch, amount, interaction.user.id),
+        ephemeral=True)
 
 
 # --------------------------------------------------------------------------- #
