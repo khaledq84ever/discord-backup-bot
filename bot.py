@@ -1181,7 +1181,7 @@ COMMANDS = [
     ("/download", "", "حمّل آخر .zip / fetch the latest archive"),
     ("/schedule", "<hours>", "نسخ تلقائي كل ساعات / auto-backup every N hours"),
     ("/search", "<query>", "ابحث في الرسائل المؤرشفة / search archived messages"),
-    ("/clear", "[channel] [amount]", "امسح رسائل روم / clear a channel's messages"),
+    ("/clear", "[channel] [amount] [all_channels]", "امسح رسائل روم أو كل السيرفر / clear a channel (or all channels)"),
     ("/help", "", "هذه القائمة / this command list"),
 ]
 
@@ -1505,15 +1505,35 @@ async def search_cmd(interaction: discord.Interaction, query: str):
 # --------------------------------------------------------------------------- #
 #  /clear — wipe messages in a channel (with confirmation)
 # --------------------------------------------------------------------------- #
-class _ClearConfirm(discord.ui.View):
-    """Yes/No confirmation for the destructive /clear command."""
+async def _wipe_channel(ch: discord.TextChannel, reason: str
+                        ) -> discord.TextChannel:
+    """Full wipe of a channel: clone (keeps name/perms/position) + delete the
+    original. Far faster than purging tens of thousands of messages and works
+    on messages older than 14 days. Returns the fresh channel."""
+    new_ch = await ch.clone(reason=reason)
+    await new_ch.edit(position=ch.position)
+    await ch.delete(reason=reason)
+    return new_ch
 
-    def __init__(self, channel: discord.TextChannel, amount: int | None,
-                 author_id: int):
+
+class _ClearConfirm(discord.ui.View):
+    """Yes/No confirmation for the destructive /clear command.
+
+    Modes: a single `channel` (purge `amount`, or full wipe when amount is
+    None), or `all_channels=True` to fully wipe every text channel in the
+    guild."""
+
+    def __init__(self, author_id: int, *,
+                 channel: discord.TextChannel | None = None,
+                 amount: int | None = None,
+                 guild: discord.Guild | None = None,
+                 all_channels: bool = False):
         super().__init__(timeout=30)
-        self.channel = channel
-        self.amount = amount          # None = wipe the whole channel
         self.author_id = author_id
+        self.channel = channel
+        self.amount = amount          # None = full wipe of the channel
+        self.guild = guild
+        self.all_channels = all_channels
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
@@ -1530,21 +1550,31 @@ class _ClearConfirm(discord.ui.View):
             child.disabled = True
         await interaction.response.edit_message(
             content="⏳ يحذف / clearing…", view=self)
-        ch = self.channel
+        reason = f"/clear by {interaction.user}"
         try:
-            if self.amount is not None:
-                deleted = await ch.purge(limit=self.amount)
+            if self.all_channels:
+                channels = [c for c in self.guild.text_channels
+                            if c.permissions_for(self.guild.me).manage_channels]
+                done, failed = 0, []
+                for c in channels:
+                    try:
+                        await _wipe_channel(c, reason)
+                        done += 1
+                    except Exception as e:                       # keep going
+                        failed.append(f"{c.name} (`{e}`)")
+                msg = (f"✅ انمسحت **{done}** روم بالكامل / "
+                       f"fully cleared **{done}** channels.")
+                if failed:
+                    msg += "\n⚠️ تعذّر / skipped: " + ", ".join(failed[:10])
+                await interaction.followup.send(msg, ephemeral=True)
+            elif self.amount is not None:
+                deleted = await self.channel.purge(limit=self.amount)
                 await interaction.followup.send(
-                    f"✅ انحذفت **{len(deleted)}** رسالة من {ch.mention} / "
+                    f"✅ انحذفت **{len(deleted)}** رسالة من "
+                    f"{self.channel.mention} / "
                     f"deleted **{len(deleted)}** messages.", ephemeral=True)
             else:
-                # Full wipe: clone the channel (keeps name/perms/position) and
-                # delete the original — far faster than purging tens of
-                # thousands of messages one bulk batch at a time.
-                new_ch = await ch.clone(
-                    reason=f"/clear by {interaction.user}")
-                await new_ch.edit(position=ch.position)
-                await ch.delete(reason=f"/clear by {interaction.user}")
+                new_ch = await _wipe_channel(self.channel, reason)
                 await interaction.followup.send(
                     f"✅ انمسح الروم بالكامل / channel fully cleared → "
                     f"{new_ch.mention}", ephemeral=True)
@@ -1571,15 +1601,30 @@ class _ClearConfirm(discord.ui.View):
               description="امسح رسائل روم / Clear messages in a channel")
 @app_commands.describe(
     channel="الروم (افتراضي: الحالي) / channel (default: current)",
-    amount="عدد الرسائل، فاضي = الروم كامل / how many, blank = whole channel")
+    amount="عدد الرسائل، فاضي = الروم كامل / how many, blank = whole channel",
+    all_channels="امسح كل الرومات بالسيرفر / wipe EVERY channel in the server")
 async def clear_cmd(interaction: discord.Interaction,
                     channel: discord.TextChannel | None = None,
-                    amount: app_commands.Range[int, 1, 1000] | None = None):
+                    amount: app_commands.Range[int, 1, 1000] | None = None,
+                    all_channels: bool = False):
     if not interaction.guild:
         return
     if not _admin_only(interaction):
         return await interaction.response.send_message(
             "⛔ Manage Server required.", ephemeral=True)
+
+    if all_channels:
+        n = len(interaction.guild.text_channels)
+        return await interaction.response.send_message(
+            f"🛑 راح تنمسح **كل** الرسائل في **{n}** روم بالسيرفر "
+            f"(كل روم ينعاد إنشاؤه بآي دي جديد) / this wipes **ALL** messages "
+            f"across **all {n}** text channels (each gets a new ID). "
+            "**لا رجعة / no undo.**\n"
+            "💡 سوّي **/backup** قبلها لو تريد نسخة / run **/backup** first.",
+            view=_ClearConfirm(interaction.user.id, guild=interaction.guild,
+                               all_channels=True),
+            ephemeral=True)
+
     ch = channel or interaction.channel
     if not isinstance(ch, discord.TextChannel):
         return await interaction.response.send_message(
@@ -1594,7 +1639,7 @@ async def clear_cmd(interaction: discord.Interaction,
         f"🗑️ راح تنحذف {scope} من {ch.mention}.{warn}\n"
         "💡 سوّي **/backup_channel** قبل الحذف لو تريد نسخة / "
         "back it up first if you want a copy.",
-        view=_ClearConfirm(ch, amount, interaction.user.id),
+        view=_ClearConfirm(interaction.user.id, channel=ch, amount=amount),
         ephemeral=True)
 
 
