@@ -1551,6 +1551,9 @@ class _ClearConfirm(discord.ui.View):
         await interaction.response.edit_message(
             content="⏳ يحذف / clearing…", view=self)
         reason = f"/clear by {interaction.user}"
+        # Public banner posted in each cleared channel so ALL members see it.
+        notice = (f"🗑️ تم مسح هذا الروم بواسطة {interaction.user.mention} / "
+                  f"This channel was cleared by {interaction.user.mention}.")
         try:
             if self.all_channels:
                 channels = [c for c in self.guild.text_channels
@@ -1558,7 +1561,8 @@ class _ClearConfirm(discord.ui.View):
                 done, failed = 0, []
                 for c in channels:
                     try:
-                        await _wipe_channel(c, reason)
+                        new_ch = await _wipe_channel(c, reason)
+                        await new_ch.send(notice)               # visible to all
                         done += 1
                     except Exception as e:                       # keep going
                         failed.append(f"{c.name} (`{e}`)")
@@ -1569,12 +1573,16 @@ class _ClearConfirm(discord.ui.View):
                 await interaction.followup.send(msg, ephemeral=True)
             elif self.amount is not None:
                 deleted = await self.channel.purge(limit=self.amount)
+                await self.channel.send(                         # visible to all
+                    f"🗑️ {interaction.user.mention} مسح **{len(deleted)}** "
+                    f"رسالة / cleared **{len(deleted)}** messages.")
                 await interaction.followup.send(
                     f"✅ انحذفت **{len(deleted)}** رسالة من "
                     f"{self.channel.mention} / "
                     f"deleted **{len(deleted)}** messages.", ephemeral=True)
             else:
                 new_ch = await _wipe_channel(self.channel, reason)
+                await new_ch.send(notice)                        # visible to all
                 await interaction.followup.send(
                     f"✅ انمسح الروم بالكامل / channel fully cleared → "
                     f"{new_ch.mention}", ephemeral=True)
