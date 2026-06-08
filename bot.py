@@ -18,9 +18,15 @@ import os
 import time
 from typing import Optional
 
+import aiohttp
 import discord
 from discord import app_commands
 from aiohttp import web
+
+# Transient network errors that should never error a command — the underlying
+# restore/backup runs as its own task and keeps going; only the progress edit
+# might blip. Swallow these alongside discord.HTTPException.
+_TRANSIENT = (discord.HTTPException, aiohttp.ClientError, asyncio.TimeoutError)
 
 import backup
 import config
@@ -1429,13 +1435,13 @@ async def restore_cmd(interaction: discord.Interaction,
             try:
                 await interaction.edit_original_response(
                     embed=_restore_embed(holder["p"], target_guild.name))
-            except discord.HTTPException:
+            except _TRANSIENT:
                 pass
     p = await task
     try:
         await interaction.edit_original_response(
             embed=_restore_embed(p, target_guild.name))
-    except discord.HTTPException:
+    except _TRANSIENT:
         pass
 
 

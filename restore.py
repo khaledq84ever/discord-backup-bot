@@ -20,9 +20,18 @@ import shutil
 import zipfile
 from typing import Callable, Optional
 
+import aiohttp
 import discord
 
 import storage
+
+# Transient errors worth retrying during webhook message replay. Mirrors
+# backup._RESUMABLE — crucially includes aiohttp.ClientError, the parent of
+# ServerDisconnectedError / ClientConnectionResetError, which previously slipped
+# past the `except discord.HTTPException` and crashed the WHOLE restore on the
+# first network blip (3 live restores died this way: server-disconnect, reset,
+# and Cloudflare 1015/429).
+_RETRYABLE = (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError, OSError)
 
 log = logging.getLogger("restore")
 
@@ -235,9 +244,8 @@ async def restore(source_gid: int, guild: discord.Guild, *,
                     if content or mid in att_mids or _load_embeds(ej))
                 if already >= replayable:        # nothing new to add — fully restored
                     continue
-                try:
-                    wh = await new_ch.create_webhook(name="BackUp Restore")
-                except discord.HTTPException:
+                wh = await _make_webhook(new_ch)
+                if wh is None:
                     continue
                 skip = already                   # resume point: skip already-sent rows
                 for mid, aname, aid, content, embeds_json in rows:
@@ -249,18 +257,19 @@ async def restore(source_gid: int, guild: discord.Guild, *,
                         skip -= 1
                         continue
                     avatar = (members.get(aid) or {}).get("avatar_url")
-                    try:
-                        await wh.send(
-                            content=(content or "")[:2000] or None,
-                            username=(aname or "user")[:80],
-                            avatar_url=avatar,
-                            files=files, embeds=embeds[:10],
-                            allowed_mentions=discord.AllowedMentions.none())
+                    ok, wh = await _replay_send(
+                        new_ch, wh,
+                        content=(content or "")[:2000] or None,
+                        username=(aname or "user")[:80],
+                        avatar_url=avatar,
+                        files=files, embeds=embeds[:10],
+                        allowed_mentions=discord.AllowedMentions.none())
+                    if ok:
                         p.messages += 1
                         if p.messages % 20 == 0:
                             tick()
-                    except discord.HTTPException as e:
-                        log.warning("msg replay failed: %s", e)
+                    else:
+                        log.warning("msg replay gave up on one message (transient)")
                     if SEND_DELAY:               # 0 = max speed (discord.py self-throttles)
                         await asyncio.sleep(SEND_DELAY)
                 try:
@@ -276,6 +285,64 @@ async def restore(source_gid: int, guild: discord.Guild, *,
         log.exception("restore failed")
         tick()
     return p
+
+
+async def _make_webhook(channel, tries: int = 4):
+    """Create the replay webhook, retrying transient errors instead of crashing
+    the restore or silently skipping a whole channel on a single network blip.
+    Returns the webhook, or None if creation is impossible (no permission)."""
+    delay = 1.0
+    for _ in range(tries):
+        try:
+            return await channel.create_webhook(name="BackUp Restore")
+        except discord.Forbidden:
+            return None                     # missing Manage Webhooks — skip channel
+        except (discord.HTTPException, *_RETRYABLE):
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 20) + random.uniform(0, 0.5)
+    return None
+
+
+async def _replay_send(channel, wh, *, files=None, tries: int = 5, **kwargs):
+    """Send one webhook message, retrying transient network / rate-limit errors.
+
+    Returns (ok, webhook). The webhook may be RECREATED if the old one's
+    connection died (ServerDisconnected) or it was deleted server-side — the
+    caller must keep the returned handle. Never raises for transient issues;
+    only gives up on that single message after `tries`, so one bad message can
+    never abort the whole restore (the old behaviour, see _RETRYABLE).
+    """
+    files = files or []
+    delay = 1.0
+    for _ in range(tries):
+        for f in files:                  # rewind file pointers before each attempt
+            try:
+                f.reset(seek=True)
+            except Exception:            # noqa: BLE001 — closed fp etc.
+                pass
+        try:
+            await wh.send(files=files, **kwargs)
+            return True, wh
+        except discord.NotFound:
+            # webhook deleted server-side — recreate once and retry
+            try:
+                wh = await channel.create_webhook(name="BackUp Restore")
+            except discord.HTTPException:
+                return False, wh
+        except discord.HTTPException as e:
+            status = getattr(e, "status", 0)
+            if status and 400 <= status < 500 and status != 429:
+                return False, wh        # permanent (bad content/embed) — skip msg
+            await asyncio.sleep(delay)  # 429 (incl. Cloudflare 1015) / 5xx — back off
+        except _RETRYABLE:
+            # connection dropped — the webhook's session may be dead, recreate it
+            try:
+                wh = await channel.create_webhook(name="BackUp Restore")
+            except discord.HTTPException:
+                pass
+            await asyncio.sleep(delay)
+        delay = min(delay * 2, 30) + random.uniform(0, 0.5)
+    return False, wh
 
 
 def _load_embeds(embeds_json: Optional[str]) -> list:
