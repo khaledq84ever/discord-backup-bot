@@ -38,4 +38,41 @@ assert bot._resolve_restore_link(foreign) == (foreign, None)
 assert bot._latest_link(GID) == DRIVE_URL
 assert bot._latest_link(GID + 1).startswith("https://backup-bot-production")
 
-print("OK — bot imports clean, token + link resolution all pass")
+# ---- web layer: /latest redirect + raw bypass, set_drive_links endpoint ---- #
+import asyncio  # noqa: E402
+import json  # noqa: E402
+
+from aiohttp import web  # noqa: E402
+from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
+
+
+async def _web_checks():
+    app = web.Application()
+    app.router.add_get("/latest/{token}/{gid}", bot._h_latest)
+    app.router.add_post("/admin/{secret}/set_drive_links", bot._h_admin_set_drive_links)
+    async with TestClient(TestServer(app)) as c:
+        # /latest with a Drive link → 302 to Drive; raw=1 bypasses the redirect.
+        r = await c.get(f"/latest/{t1}/{GID}", allow_redirects=False)
+        assert r.status == 302 and r.headers["Location"] == DRIVE_URL, r.status
+        r = await c.get(f"/latest/{t1}/{GID}?raw=1", allow_redirects=False)
+        assert r.status != 302, "raw=1 must not redirect"
+        # Wrong token → 403 regardless of Drive link.
+        r = await c.get(f"/latest/{'0' * 24}/{GID}", allow_redirects=False)
+        assert r.status == 403
+        # set_drive_links: merges even WITHOUT a JSON content-type header.
+        r = await c.post(f"/admin/{bot.ADMIN_SECRET}/set_drive_links",
+                         data=json.dumps({"999": "https://drive.google.com/open?id=NEW"}))
+        assert r.status == 200 and (await r.json())["links"] == 2, await r.text()
+        assert bot._drive_links["999"].endswith("NEW")
+        assert json.load(open(bot._DRIVE_LINKS_PATH))["999"].endswith("NEW")
+        # Garbage body → 400, bad secret → 403.
+        r = await c.post(f"/admin/{bot.ADMIN_SECRET}/set_drive_links", data="not json")
+        assert r.status == 400
+        r = await c.post("/admin/wrong/set_drive_links", data="{}")
+        assert r.status == 403
+
+
+asyncio.run(_web_checks())
+os.remove(bot._DRIVE_LINKS_PATH)  # don't leave test links where the real bot reads them
+
+print("OK — bot imports clean, token/link resolution + web endpoints all pass")
