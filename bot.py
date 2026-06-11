@@ -1182,6 +1182,7 @@ COMMANDS = [
     ("/schedule", "<hours>", "نسخ تلقائي كل ساعات / auto-backup every N hours"),
     ("/search", "<query>", "ابحث في الرسائل المؤرشفة / search archived messages"),
     ("/clear", "[channel] [amount] [all_channels]", "امسح رسائل روم أو كل السيرفر / clear a channel (or all channels)"),
+    ("/unban_all", "", "فك الحظر عن كل المحظورين ليرجعوا / unban everyone so they can rejoin"),
     ("/help", "", "هذه القائمة / this command list"),
 ]
 
@@ -1648,6 +1649,99 @@ async def clear_cmd(interaction: discord.Interaction,
         "💡 سوّي **/backup_channel** قبل الحذف لو تريد نسخة / "
         "back it up first if you want a copy.",
         view=_ClearConfirm(interaction.user.id, channel=ch, amount=amount),
+        ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /unban_all
+# --------------------------------------------------------------------------- #
+class _UnbanAllConfirm(discord.ui.View):
+    """Yes/No confirmation for /unban_all — lifts every ban in the guild."""
+
+    def __init__(self, author_id: int, guild: discord.Guild, bans: list):
+        super().__init__(timeout=30)
+        self.author_id = author_id
+        self.guild = guild
+        self.bans = bans
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "هذا الزر مو إلك / not your button.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="نعم فك الحظر / Yes, unban all",
+                       style=discord.ButtonStyle.danger, emoji="🔓")
+    async def confirm(self, interaction: discord.Interaction,
+                      button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content=f"⏳ يفك الحظر عن **{len(self.bans)}** / "
+                    f"unbanning **{len(self.bans)}**…", view=self)
+        reason = f"/unban_all by {interaction.user}"
+        done, failed = 0, 0
+        for entry in self.bans:
+            try:
+                await self.guild.unban(entry.user, reason=reason)
+                done += 1
+            except discord.NotFound:
+                done += 1          # already unbanned — count as success
+            except Exception:
+                failed += 1
+        msg = (f"✅ تم فك الحظر عن **{done}** عضو، صاروا يقدرون يدخلون "
+               f"السيرفر / unbanned **{done}** users — they can rejoin now.")
+        if failed:
+            msg += (f"\n⚠️ تعذّر فك الحظر عن **{failed}** / "
+                    f"failed on **{failed}**.")
+        await interaction.followup.send(msg, ephemeral=True)
+        self.stop()
+
+    @discord.ui.button(label="إلغاء / Cancel",
+                       style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction,
+                     button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content="❎ تم الإلغاء / cancelled.", view=self)
+        self.stop()
+
+
+@tree.command(
+    name="unban_all",
+    description="فك الحظر عن كل الأعضاء المحظورين / Unban every banned user")
+async def unban_all_cmd(interaction: discord.Interaction):
+    if not interaction.guild:
+        return
+    if not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+    if not interaction.guild.me.guild_permissions.ban_members:
+        return await interaction.response.send_message(
+            "⛔ ماعندي صلاحية / I need the **Ban Members** permission.",
+            ephemeral=True)
+
+    # Paging the ban list can take a while — defer so we don't blow the
+    # 3-second initial-response deadline, then prompt to confirm.
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        bans = [entry async for entry in interaction.guild.bans(limit=None)]
+    except discord.Forbidden:
+        return await interaction.followup.send(
+            "⛔ ماعندي صلاحية / I need the **Ban Members** permission.",
+            ephemeral=True)
+    if not bans:
+        return await interaction.followup.send(
+            "✅ مافي أحد محظور بالسيرفر / there are no banned users.",
+            ephemeral=True)
+
+    await interaction.followup.send(
+        f"🔓 راح يتفك الحظر عن **{len(bans)}** عضو محظور — بيقدرون يرجعون "
+        f"يدخلون السيرفر / this will unban **{len(bans)}** banned users so "
+        f"they can rejoin.\n**أكد / confirm:**",
+        view=_UnbanAllConfirm(interaction.user.id, interaction.guild, bans),
         ephemeral=True)
 
 
