@@ -1288,6 +1288,7 @@ COMMANDS = [
     ("/clear", "[channel] [amount] [all_channels]", "امسح رسائل روم أو كل السيرفر / clear a channel (or all channels)"),
     ("/unban_all", "", "فك الحظر عن كل المحظورين ليرجعوا / unban everyone so they can rejoin"),
     ("/msg", "<message>", "أرسل رسالة خاصة لكل الأعضاء / DM a message to every member"),
+    ("/room", "<open|close> [channel] [all_channels]", "افتح أو اقفل روم للجميع / open or lock a channel"),
     ("/help", "", "هذه القائمة / this command list"),
 ]
 
@@ -1968,6 +1969,83 @@ async def msg_cmd(interaction: discord.Interaction, message: str):
         f">>> {preview}\n\n**أكد / confirm:**",
         view=_BroadcastConfirm(interaction.user.id, members, message),
         ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /room  — open (unlock) or close (lock) a channel for @everyone
+# --------------------------------------------------------------------------- #
+@tree.command(
+    name="room",
+    description="افتح أو اقفل روم للجميع / Open or lock a channel for everyone")
+@app_commands.describe(
+    action="افتح أو اقفل / open or close",
+    channel="الروم (افتراضي: الحالي) / channel (default: current)",
+    all_channels="طبّقها على كل الرومات بالسيرفر / apply to EVERY channel")
+@app_commands.choices(action=[
+    app_commands.Choice(name="🔓 افتح / open", value="open"),
+    app_commands.Choice(name="🔒 اقفل / close", value="close"),
+])
+async def room_cmd(interaction: discord.Interaction,
+                   action: app_commands.Choice[str],
+                   channel: discord.TextChannel | None = None,
+                   all_channels: bool = False):
+    if not interaction.guild:
+        return
+    if not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+    # Editing a channel's permission overwrites needs Manage Roles.
+    if not interaction.guild.me.guild_permissions.manage_roles:
+        return await interaction.response.send_message(
+            "⛔ ماعندي صلاحية / I need the **Manage Roles** permission.",
+            ephemeral=True)
+
+    opening = action.value == "open"
+    everyone = interaction.guild.default_role
+    reason = f"/room {action.value} by {interaction.user}"
+
+    async def _apply(ch: discord.TextChannel) -> bool:
+        try:
+            ow = ch.overwrites_for(everyone)
+            ow.send_messages = True if opening else False
+            await ch.set_permissions(everyone, overwrite=ow, reason=reason)
+            return True
+        except discord.HTTPException:
+            return False
+
+    if all_channels:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        done = failed = 0
+        for ch in interaction.guild.text_channels:
+            if await _apply(ch):
+                done += 1
+            else:
+                failed += 1
+            await asyncio.sleep(0.3)        # gentle on the rate limit
+        head = ("🔓 تم فتح" if opening else "🔒 تم قفل")
+        tail = ("صار الكل يقدر يكتب فيها / opened for @everyone"
+                if opening else
+                "صار ما حدا يكتب غير الإدارة / locked — only staff can post")
+        msg = f"{head} **{done}** روم — {tail}."
+        if failed:
+            msg += f"\n⚠️ تعذّر على **{failed}** / failed on **{failed}**."
+        return await interaction.followup.send(msg, ephemeral=True)
+
+    ch = channel or interaction.channel
+    if not isinstance(ch, discord.TextChannel):
+        return await interaction.response.send_message(
+            "هذا الأمر للرومات النصية فقط / text channels only.", ephemeral=True)
+    if not await _apply(ch):
+        return await interaction.response.send_message(
+            f"💥 ماقدرت أعدّل {ch.mention} / couldn't update it.", ephemeral=True)
+    if opening:
+        await interaction.response.send_message(
+            f"🔓 تم فتح {ch.mention} — الكل يقدر يكتب فيها الآن / "
+            f"opened for @everyone.", ephemeral=True)
+    else:
+        await interaction.response.send_message(
+            f"🔒 تم قفل {ch.mention} — ما حدا يقدر يكتب غير الإدارة / "
+            f"locked — only staff can post now.", ephemeral=True)
 
 
 # --------------------------------------------------------------------------- #
