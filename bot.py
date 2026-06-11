@@ -2080,6 +2080,7 @@ async def openvoice_cmd(interaction: discord.Interaction,
             ow = ch.overwrites_for(everyone)
             ow.connect = True
             ow.speak = True
+            ow.use_voice_activation = True
             await ch.set_permissions(everyone, overwrite=ow, reason=reason)
             return True
         except discord.HTTPException:
