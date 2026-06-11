@@ -2101,6 +2101,9 @@ async def openvoice_cmd(interaction: discord.Interaction,
         return await interaction.followup.send(msg, ephemeral=True)
 
     ch = channel
+    # Typed inside a voice channel's own text chat → target that voice room.
+    if ch is None and isinstance(interaction.channel, discord.VoiceChannel):
+        ch = interaction.channel
     if ch is None and isinstance(interaction.user, discord.Member) \
             and interaction.user.voice and isinstance(
                 interaction.user.voice.channel, discord.VoiceChannel):
