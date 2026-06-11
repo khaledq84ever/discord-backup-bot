@@ -1,3 +1,20 @@
+## 2026-06-11 — zipscan: auto-detect risky zips before Google flags them
+
+- Context: Google flagged 4 guild zips on Drive ("malware & similar harmful content")
+  because backups contained executable Discord attachments. The sanitize fix worked but
+  its FLAGGED list was hard-coded — the NEXT guild with an .exe would get flagged first.
+- `bot.py`: new admin action `cmd?do=zipscan[&guild=]` — opens each guild's newest zip
+  server-side and reports members matching the risky set (.exe/.dll/.bat/.jar/… or
+  archives under attachments/). Returns `risky_guilds` for the mirror job.
+- `mirror_to_drive.sh`: FLAGGED now fetched LIVE from zipscan (static 4 only as
+  fallback when the endpoint is unreachable; "NONE" sentinel distinguishes a clean
+  fleet from a failed fetch).
+- **Live result:** zipscan found **8** risky guilds — the 4 Google flagged **plus 4
+  more** (1055387573452816415, 1130054024838782988, 1278427210025271377,
+  1461292328252739768) that would have been flagged next. Sanitize mirror run launched
+  (nohup) to clean them proactively.
+- Commit `85ddefa`, deployed via `railway up` 14:45.
+
 # Work Notes — Discord Backup Bot
 
 ## 2026-06-11 (later) — Drive malware flags + sanitizer; integration DEPLOYED
