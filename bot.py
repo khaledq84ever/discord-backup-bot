@@ -1287,6 +1287,7 @@ COMMANDS = [
     ("/search", "<query>", "ابحث في الرسائل المؤرشفة / search archived messages"),
     ("/clear", "[channel] [amount] [all_channels]", "امسح رسائل روم أو كل السيرفر / clear a channel (or all channels)"),
     ("/unban_all", "", "فك الحظر عن كل المحظورين ليرجعوا / unban everyone so they can rejoin"),
+    ("/msg", "<message>", "أرسل رسالة خاصة لكل الأعضاء / DM a message to every member"),
     ("/help", "", "هذه القائمة / this command list"),
 ]
 
@@ -1851,6 +1852,121 @@ async def unban_all_cmd(interaction: discord.Interaction):
         f"يدخلون السيرفر / this will unban **{len(bans)}** banned users so "
         f"they can rejoin.\n**أكد / confirm:**",
         view=_UnbanAllConfirm(interaction.user.id, interaction.guild, bans),
+        ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /msg  — DM a message to every member (admin broadcast)
+# --------------------------------------------------------------------------- #
+class _BroadcastConfirm(discord.ui.View):
+    """Yes/No confirmation for /msg — DMs the message to every human member."""
+
+    def __init__(self, author_id: int, members: list, text: str):
+        super().__init__(timeout=120)
+        self.author_id = author_id
+        self.members = members
+        self.text = text
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "هذا الزر مو إلك / not your button.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="نعم أرسل للكل / Yes, DM everyone",
+                       style=discord.ButtonStyle.danger, emoji="📨")
+    async def confirm(self, interaction: discord.Interaction,
+                      button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        total = len(self.members)
+        await interaction.response.edit_message(
+            content=f"⏳ يرسل الرسالة الخاصة لـ **{total}** عضو / "
+                    f"DMing **{total}** members…", view=self)
+
+        sent = failed = 0
+        # Discord rate-limits DMs and flags bursty mass-DMs as spam. discord.py
+        # already auto-sleeps on 429s; the extra delay keeps us well under the
+        # limit so a big server doesn't trip abuse detection.
+        for i, member in enumerate(self.members, 1):
+            try:
+                await member.send(self.text)
+                sent += 1
+            except discord.Forbidden:
+                failed += 1          # DMs closed, or the member blocked the bot
+            except discord.HTTPException:
+                failed += 1
+            await asyncio.sleep(1.0)
+            # Refresh the progress note every 25 sends (avoid edit spam).
+            if i % 25 == 0:
+                try:
+                    await interaction.edit_original_response(
+                        content=f"⏳ {i}/{total} … ✅ {sent}  ⚠️ {failed}",
+                        view=self)
+                except discord.HTTPException:
+                    pass
+
+        msg = (f"✅ تم الإرسال لـ **{sent}** عضو / delivered to **{sent}** "
+               f"members.")
+        if failed:
+            msg += (f"\n⚠️ تعذّر الإرسال لـ **{failed}** (مغلقين الخاص أو "
+                    f"حاظرين البوت) / couldn't DM **{failed}** (DMs closed or "
+                    f"blocked the bot).")
+        try:
+            await interaction.followup.send(msg, ephemeral=True)
+        except discord.HTTPException:
+            pass                     # interaction token may expire on huge sends
+        self.stop()
+
+    @discord.ui.button(label="إلغاء / Cancel",
+                       style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction,
+                     button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content="❎ تم الإلغاء / cancelled.", view=self)
+        self.stop()
+
+
+@tree.command(
+    name="msg",
+    description="أرسل رسالة خاصة لكل أعضاء السيرفر / DM a message to every member")
+@app_commands.describe(
+    message="نص الرسالة اللي يوصل خاص لكل عضو / the message to DM everyone")
+async def msg_cmd(interaction: discord.Interaction, message: str):
+    if not interaction.guild:
+        return
+    if not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    # Recipients = every human member (bots can't be DMed). The cached member
+    # list needs the Members intent, which this bot already enables; fall back
+    # to fetching if the cache is cold.
+    guild = interaction.guild
+    members = [m for m in guild.members if not m.bot]
+    if not members:
+        try:
+            members = [m async for m in guild.fetch_members(limit=None)
+                       if not m.bot]
+        except discord.HTTPException:
+            members = []
+    if not members:
+        return await interaction.followup.send(
+            "⚠️ ماقدرت أجيب قائمة الأعضاء / couldn't load the member list.",
+            ephemeral=True)
+
+    preview = message if len(message) <= 1500 else message[:1500] + "…"
+    eta = len(members)               # ~1 second per DM
+    await interaction.followup.send(
+        f"📨 راح تنرسل هذي الرسالة كـ **رسالة خاصة (DM)** لـ "
+        f"**{len(members)}** عضو (~{eta} ثانية / ~{eta}s):\n\n"
+        f">>> {preview}\n\n**أكد / confirm:**",
+        view=_BroadcastConfirm(interaction.user.id, members, message),
         ephemeral=True)
 
 
