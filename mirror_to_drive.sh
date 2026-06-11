@@ -30,7 +30,9 @@ echo "mirroring ${#GUILDS[@]} guilds"
 # fresh Drive object so the malware flag clears and the link is shareable again.
 # The complete originals stay on the Railway volume (restore uses those).
 FLAGGED="1378900499025367145 1512116155085488128 1512203310596362313 1512234194124800213"
-STRIP_TYPES='*.exe *.dll *.scr *.bat *.cmd *.msi *.vbs *.ps1 *.jar *.apk'
+# Executables AND nested archives — Drive scans inside .rar/.zip members and
+# kept flagging the cleaned zips until archive members were stripped too.
+STRIP_TYPES='*.exe *.dll *.scr *.bat *.cmd *.msi *.vbs *.ps1 *.jar *.apk attachments/*.zip attachments/*.rar attachments/*.7z attachments/*.tar attachments/*.gz attachments/*.iso'
 
 ok=0; fail=0; total=0
 declare -A LINKS
