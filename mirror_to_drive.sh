@@ -43,12 +43,19 @@ for gid in "${GUILDS[@]}"; do
     ok=$((ok+1)); total=$((total+size)); continue
   fi
   echo "PUSH  $gid  ($(python3 -c "print(f'{$size/1048576:.0f} MB')")) → $DEST/$gid.zip"
-  if rclone copyurl "$url" "$DEST/$gid.zip" --drive-chunk-size 64M >/dev/null 2>&1; then
+  pushed=0
+  for attempt in 1 2 3; do   # stream drops are transient — retry with back-off
+    if rclone copyurl "$url" "$DEST/$gid.zip" --drive-chunk-size 64M >/dev/null 2>&1; then
+      pushed=1; break
+    fi
+    echo "RETRY $gid  (attempt $attempt failed)"; sleep $((attempt * 20))
+  done
+  if [ "$pushed" -eq 1 ]; then
     link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
     [ -n "$link" ] && LINKS[$gid]="$link"
     ok=$((ok+1)); total=$((total+size))
   else
-    echo "FAIL  $gid  (rclone error)"; fail=$((fail+1))
+    echo "FAIL  $gid  (rclone error after 3 attempts)"; fail=$((fail+1))
   fi
 done
 
