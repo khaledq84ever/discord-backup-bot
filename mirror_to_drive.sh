@@ -29,7 +29,9 @@ ok=0; fail=0; total=0
 declare -A LINKS
 for gid in "${GUILDS[@]}"; do
   tok=$(python3 -c "import hmac,hashlib;print(hmac.new(b'$DOWNLOAD_SECRET',b'$gid',hashlib.sha256).hexdigest()[:24])")
-  url="$BASE/latest/$tok/$gid"
+  # raw=1: get the zip bytes even after the bot starts 302-redirecting /latest
+  # to the Drive mirror (otherwise we'd re-upload Drive's HTML viewer page).
+  url="$BASE/latest/$tok/$gid?raw=1"
   size=$(curl -sIL --max-time 30 "$url" | awk 'tolower($0) ~ /^content-length/ {v=$2} END{gsub(/\r/,"",v); print v+0}')
   if [ "${size:-0}" -le 0 ]; then
     echo "SKIP  $gid  (no backup yet / 404)"; fail=$((fail+1)); continue

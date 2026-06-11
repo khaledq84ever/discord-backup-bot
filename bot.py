@@ -113,6 +113,20 @@ def _latest_link(guild_id: int) -> Optional[str]:
     return f"https://{_PUBLIC_DOMAIN}/latest/{_guild_token(guild_id)}/{guild_id}"
 
 
+def _resolve_restore_link(link: str) -> tuple[Optional[str], Optional[int]]:
+    """Map a pasted backup link to (download_url, local_gid) for /restore.
+    Drive links the bot itself issued resolve back to the local snapshot's guild
+    id (Drive serves an HTML viewer page, not zip bytes). Our own /latest links
+    get raw=1 appended so the Drive redirect doesn't hand the downloader HTML."""
+    for gid, url in _drive_links.items():
+        if link == url:
+            return None, int(gid)
+    if _PUBLIC_DOMAIN and f"//{_PUBLIC_DOMAIN}/latest/" in link and "raw=" not in link:
+        sep = "&" if "?" in link else "?"
+        return link + sep + "raw=1", None
+    return link, None
+
+
 # Shield icon — used as the bot avatar and as the embed thumbnail.
 _ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "assets", "logos", "01-backupbot-512.png")
@@ -164,9 +178,10 @@ async def _h_latest(request):
     if not hmac.compare_digest(request.match_info["token"], _guild_token(int(gid))):
         return web.Response(status=403, text="forbidden")
     # Drive mirror first: existing /latest links keep working but the bytes come
-    # from Google Drive instead of the Railway volume.
+    # from Google Drive instead of the Railway volume. ?raw=1 bypasses the
+    # redirect for callers that need the actual zip bytes (mirror job, /restore).
     drive = _drive_links.get(gid)
-    if drive:
+    if drive and "raw" not in request.query:
         raise web.HTTPFound(drive)
     # Enforce retention on access: dedup + drop zips older than the retention
     # window, so an expired backup link 404s instead of serving stale data.
@@ -306,7 +321,11 @@ async def _admin_restore_task(guild: discord.Guild, link: str, with_messages: bo
     log.info("admin-triggered restore starting for %s from %s", guild.id, link[:60])
     restoring.add(guild.id)
     try:
-        rp = await restore_engine.restore_from_zip(link, guild, with_messages=with_messages)
+        url, local_gid = _resolve_restore_link(link)
+        if local_gid is not None:
+            rp = await restore_engine.restore(local_gid, guild, with_messages=with_messages)
+        else:
+            rp = await restore_engine.restore_from_zip(url, guild, with_messages=with_messages)
         log.info("admin-triggered restore DONE for %s — roles=%s channels=%s msgs=%s err=%s",
                  guild.id, rp.roles, rp.channels, rp.messages, rp.error)
     except Exception as e:  # noqa: BLE001
@@ -1450,6 +1469,11 @@ async def restore_cmd(interaction: discord.Interaction,
         if not link.lower().startswith(("http://", "https://")):
             return await interaction.response.send_message(
                 "❌ لازم رابط http(s) صحيح / link must be a valid http(s) URL.", ephemeral=True)
+        url, local_gid = _resolve_restore_link(link)
+        if local_gid is not None and storage.read_json(local_gid, "channels.json"):
+            link, source_gid = None, local_gid   # bot-issued Drive link → restore the local copy
+        else:
+            link = url
     else:
         try:
             source_gid = int(source) if source else interaction.guild.id
