@@ -420,8 +420,9 @@ async def _h_admin_cmd(request):
 
     if do == "help":
         return web.json_response({
-            "actions": ["diag", "scan", "errors", "logs", "integrity_all", "backup",
-                        "backup_all", "dedup", "prune", "leave", "verify_clone"],
+            "actions": ["diag", "scan", "errors", "logs", "integrity_all", "zipscan",
+                        "backup", "backup_all", "dedup", "prune", "leave",
+                        "verify_clone"],
             "usage": "/admin/<secret>/cmd?do=<action>[&guild=&source=&target=&n=&grep=]",
         })
 
@@ -507,6 +508,46 @@ async def _h_admin_cmd(request):
                         "score": integ.get("score"),
                         "blocked": len(integ.get("channels_skipped", []))})
         return web.json_response({"guilds": out})
+
+    if do == "zipscan":
+        # Which guilds' newest zip carries members Google Drive flags as malware
+        # (executables, or archives nested under attachments/)? The Drive mirror
+        # job calls this to decide which guilds need a sanitized upload, so the
+        # flagged-guild list no longer has to be maintained by hand.
+        import zipfile
+        risky_ext = (".exe", ".dll", ".scr", ".bat", ".cmd", ".msi", ".vbs",
+                     ".ps1", ".jar", ".apk")
+        nested_ext = (".zip", ".rar", ".7z", ".tar", ".gz", ".iso")
+
+        def _scan(gid: int):
+            bdir = storage.backups_dir(gid)
+            try:
+                zips = [f for f in os.listdir(bdir) if f.endswith(".zip")]
+            except OSError:
+                zips = []
+            if not zips:
+                return None
+            newest = max(zips, key=lambda f: os.path.getmtime(os.path.join(bdir, f)))
+            try:
+                with zipfile.ZipFile(os.path.join(bdir, newest)) as z:
+                    names = z.namelist()
+            except Exception:  # noqa: BLE001 — unreadable zip: treat as risky
+                return {"zip": newest, "members": None, "risky": -1}
+            bad = [n for n in names if n.lower().endswith(risky_ext)
+                   or ("attachments/" in n and n.lower().endswith(nested_ext))]
+            return {"zip": newest, "members": len(names), "risky": len(bad),
+                    "risky_members": bad[:20]}
+
+        q = request.query.get("guild", "")
+        targets = [int(q)] if q.isdigit() else [g.id for g in bot.guilds]
+        out = {}
+        for gid in targets:
+            res = await asyncio.to_thread(_scan, gid)
+            if res is not None:
+                out[str(gid)] = res
+        return web.json_response(
+            {"guilds": out,
+             "risky_guilds": [g for g, r in out.items() if r["risky"] != 0]})
 
     if do == "dedup":
         before = storage.storage_stats().get("used_bytes", 0)

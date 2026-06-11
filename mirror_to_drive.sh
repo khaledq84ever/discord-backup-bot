@@ -24,12 +24,23 @@ if [ "${#GUILDS[@]}" -eq 0 ]; then
 fi
 echo "mirroring ${#GUILDS[@]} guilds"
 
-# Zips Google flagged under its malware policy (2026-06-11): they contained
-# executable Discord attachments (.exe/.bat/.jar/...). For these guilds we mirror
-# a SANITIZED copy — same backup minus executable member types — uploaded as a
-# fresh Drive object so the malware flag clears and the link is shareable again.
+# Guilds whose newest zip contains members Google Drive flags as malware
+# (executable Discord attachments — .exe/.bat/.jar/... — or nested archives).
+# For these guilds we mirror a SANITIZED copy — same backup minus those member
+# types — uploaded as a fresh Drive object so it scans clean and stays shareable.
 # The complete originals stay on the Railway volume (restore uses those).
-FLAGGED="1378900499025367145 1512116155085488128 1512203310596362313 1512234194124800213"
+# The list comes LIVE from the bot's zipscan admin action, so newly risky guilds
+# are sanitized BEFORE Google ever flags them; the static list is only a fallback
+# for when the endpoint is unreachable (e.g. old bot build mid-deploy).
+FLAGGED=$(curl -sf --max-time 120 "$BASE/admin/$ADMIN_SECRET/cmd?do=zipscan" \
+  | python3 -c "import json,sys;g=json.load(sys.stdin)['risky_guilds'];print(' '.join(g) or 'NONE')" 2>/dev/null)
+if [ -z "${FLAGGED:-}" ]; then
+  FLAGGED="1378900499025367145 1512116155085488128 1512203310596362313 1512234194124800213"
+  echo "zipscan unavailable — falling back to static flagged list"
+elif [ "$FLAGGED" = "NONE" ]; then
+  FLAGGED=""
+fi
+echo "guilds needing sanitized mirror: ${FLAGGED:-none}"
 # Executables AND nested archives — Drive scans inside .rar/.zip members and
 # kept flagging the cleaned zips until archive members were stripped too.
 STRIP_TYPES='*.exe *.dll *.scr *.bat *.cmd *.msi *.vbs *.ps1 *.jar *.apk attachments/*.zip attachments/*.rar attachments/*.7z attachments/*.tar attachments/*.gz attachments/*.iso'
