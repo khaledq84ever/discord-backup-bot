@@ -354,10 +354,10 @@ async def _h_admin_set_drive_links(request):
     if not _admin_ok(request):
         return web.json_response({"error": "forbidden"}, status=403)
     try:
-        incoming = await request.json()
+        incoming = json.loads(await request.text())
         if not isinstance(incoming, dict):
             raise ValueError
-    except ValueError:
+    except (ValueError, UnicodeDecodeError):
         return web.json_response({"error": "body must be a JSON object {gid: url}"},
                                  status=400)
     _drive_links.update({str(k): str(v) for k, v in incoming.items()})

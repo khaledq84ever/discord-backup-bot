@@ -14,3 +14,7 @@ data/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+
+# Drive mirror artifacts (generated per run; links map holds shareable URLs)
+mirror.log
+drive_links.json

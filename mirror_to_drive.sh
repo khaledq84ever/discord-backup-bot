@@ -5,7 +5,12 @@
 # Streamed via rclone copyurl — no local disk used. Re-runnable (overwrites).
 set -uo pipefail
 
+# Single-instance lock so a cron tick can't overlap a run already in flight.
+exec 9>/tmp/mirror_to_drive.lock
+flock -n 9 || { echo "another mirror run is active — exiting"; exit 0; }
+
 DOWNLOAD_SECRET="10037853c9c398165248dbc481c8c2cb"
+ADMIN_SECRET="75af3a234fb3e17f63e060633b55f37f"
 BASE="https://backup-bot-production.up.railway.app"
 DEST="gdrive:backupdiscord/by-guild"
 MAP="/home/khaled/projects/discord-backup-bot/drive_links.json"
@@ -61,3 +66,9 @@ echo "------------------------------------------------------------"
 echo "uploaded=$ok  skipped/failed=$fail  total=$(python3 -c "print(f'{$total/1073741824:.2f} GiB')")"
 echo "wrote map: $MAP ($(python3 -c "import json;print(len(json.load(open('$MAP'))))" 2>/dev/null) links)"
 rclone size "$DEST" 2>/dev/null
+
+# Push the map to the bot so /status, /download and /latest hand out Drive
+# links. Harmless before the set_drive_links deploy (404s, logged, non-fatal).
+resp=$(curl -s --max-time 60 -X POST -H 'Content-Type: application/json' \
+       --data-binary @"$MAP" "$BASE/admin/$ADMIN_SECRET/set_drive_links" || true)
+echo "set_drive_links → ${resp:-no response}"
