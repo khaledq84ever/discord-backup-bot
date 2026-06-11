@@ -47,6 +47,13 @@ STRIP_TYPES='*.exe *.dll *.scr *.bat *.cmd *.msi *.vbs *.ps1 *.jar *.apk attachm
 
 ok=0; fail=0; total=0
 declare -A LINKS
+# Push one link to the bot immediately (endpoint merges). Without this, a run
+# dying between "deletefile old object" and the end-of-run map POST leaves the
+# bot 302-redirecting to a dead Drive link until the next cron pass.
+post_link() {  # $1=gid $2=link
+  curl -s --max-time 30 -X POST -H 'Content-Type: application/json' \
+       -d "{\"$1\": \"$2\"}" "$BASE/admin/$ADMIN_SECRET/set_drive_links" >/dev/null 2>&1 || true
+}
 for gid in "${GUILDS[@]}"; do
   tok=$(python3 -c "import hmac,hashlib;print(hmac.new(b'$DOWNLOAD_SECRET',b'$gid',hashlib.sha256).hexdigest()[:24])")
   # raw=1: get the zip bytes even after the bot starts 302-redirecting /latest
@@ -77,7 +84,7 @@ for gid in "${GUILDS[@]}"; do
     fi
     rm -f "$tmp"
     link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
-    [ -n "$link" ] && LINKS[$gid]="$link"
+    [ -n "$link" ] && { LINKS[$gid]="$link"; post_link "$gid" "$link"; }
     ok=$((ok+1)); total=$((total+csize))
     continue
   fi
@@ -97,7 +104,7 @@ for gid in "${GUILDS[@]}"; do
   done
   if [ "$pushed" -eq 1 ]; then
     link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
-    [ -n "$link" ] && LINKS[$gid]="$link"
+    [ -n "$link" ] && { LINKS[$gid]="$link"; post_link "$gid" "$link"; }
     ok=$((ok+1)); total=$((total+size))
   else
     echo "FAIL  $gid  (rclone error after 3 attempts)"; fail=$((fail+1))
