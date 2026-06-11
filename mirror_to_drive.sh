@@ -15,15 +15,14 @@ BASE="https://backup-bot-production.up.railway.app"
 DEST="gdrive:backupdiscord/by-guild"
 MAP="/home/khaled/projects/discord-backup-bot/drive_links.json"
 
-GUILDS=(
-787744065801945089 798931008237338634 800861126056476674 840039242947231765
-1055387573452816415 1069671053858701432 1130054024838782988 1202344060522864761
-1256756013072126025 1276293586647908434 1277812187020267594 1278427210025271377
-1334179712888471635 1378900499025367145 1404561286762729654 1440316440854134838
-1461292328252739768 1469461283454849197 1471090151446024355 1498346626794782763
-1506930366361899109 1508229704493043753 1511264852092522537 1512116155085488128
-1512203310596362313 1512234194124800213 1512353609763782806
-)
+# Live guild list from the bot itself, so servers it joins later mirror too.
+GUILDS=($(curl -s --max-time 30 "$BASE/admin/$ADMIN_SECRET/ping" \
+  | python3 -c "import json,sys;print(' '.join(str(g['id']) for g in json.load(sys.stdin)['guilds']))" 2>/dev/null))
+if [ "${#GUILDS[@]}" -eq 0 ]; then
+  echo "ABORT — could not fetch guild list from $BASE/admin/…/ping"
+  exit 1
+fi
+echo "mirroring ${#GUILDS[@]} guilds"
 
 ok=0; fail=0; total=0
 declare -A LINKS
