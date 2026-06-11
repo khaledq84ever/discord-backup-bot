@@ -13,6 +13,7 @@ Slash commands:
 import asyncio
 import hashlib
 import hmac
+import json
 import logging
 import os
 import time
@@ -90,8 +91,23 @@ def _guild_token(guild_id: int) -> str:
                     hashlib.sha256).hexdigest()[:24]
 
 
+# Google Drive mirror — {guild_id: shared_drive_url}, pushed by the mirror job
+# via /admin/<secret>/set_drive_links and persisted on the volume. When a guild
+# has a Drive link, every place that hands out a download link prefers it.
+_DRIVE_LINKS_PATH = os.path.join(config.DATA_DIR, "drive_links.json")
+try:
+    with open(_DRIVE_LINKS_PATH) as _f:
+        _drive_links: dict[str, str] = json.load(_f)
+except (OSError, ValueError):
+    _drive_links = {}
+
+
 def _latest_link(guild_id: int) -> Optional[str]:
-    """A stable per-server link that always serves this guild's newest snapshot."""
+    """A stable per-server link that always serves this guild's newest snapshot.
+    Prefers the Google Drive mirror when one exists for this guild."""
+    drive = _drive_links.get(str(guild_id))
+    if drive:
+        return drive
     if not _PUBLIC_DOMAIN:
         return None
     return f"https://{_PUBLIC_DOMAIN}/latest/{_guild_token(guild_id)}/{guild_id}"
@@ -147,6 +163,11 @@ async def _h_latest(request):
         return web.Response(status=400, text="bad request")
     if not hmac.compare_digest(request.match_info["token"], _guild_token(int(gid))):
         return web.Response(status=403, text="forbidden")
+    # Drive mirror first: existing /latest links keep working but the bytes come
+    # from Google Drive instead of the Railway volume.
+    drive = _drive_links.get(gid)
+    if drive:
+        raise web.HTTPFound(drive)
     # Enforce retention on access: dedup + drop zips older than the retention
     # window, so an expired backup link 404s instead of serving stale data.
     storage.prune_backups(int(gid))
@@ -325,6 +346,28 @@ async def _h_admin_dedup(request):
         "status": "done", **stats,
         "volume_used_before": before, "volume_used_after": after,
     })
+
+
+async def _h_admin_set_drive_links(request):
+    """Merge + persist a {guild_id: drive_url} map (POSTed as JSON by the VPS
+    mirror job). _latest_link then hands out the Drive link for those guilds."""
+    if not _admin_ok(request):
+        return web.json_response({"error": "forbidden"}, status=403)
+    try:
+        incoming = await request.json()
+        if not isinstance(incoming, dict):
+            raise ValueError
+    except ValueError:
+        return web.json_response({"error": "body must be a JSON object {gid: url}"},
+                                 status=400)
+    _drive_links.update({str(k): str(v) for k, v in incoming.items()})
+    try:
+        with open(_DRIVE_LINKS_PATH, "w") as f:
+            json.dump(_drive_links, f, indent=1)
+    except OSError as e:
+        return web.json_response({"error": f"persist failed: {e}"}, status=500)
+    log.info("drive links updated — %d guilds now mirror to Drive", len(_drive_links))
+    return web.json_response({"status": "ok", "links": len(_drive_links)})
 
 
 async def _h_admin_backup_all(request):
@@ -538,6 +581,7 @@ async def _start_webserver():
     app.router.add_post("/admin/{secret}/backup", _h_admin_backup)
     app.router.add_post("/admin/{secret}/backup_all", _h_admin_backup_all)
     app.router.add_post("/admin/{secret}/dedup", _h_admin_dedup)
+    app.router.add_post("/admin/{secret}/set_drive_links", _h_admin_set_drive_links)
     app.router.add_post("/admin/{secret}/restore", _h_admin_restore)
     # Unified control plane — one command, GET or POST, dispatches by ?do=<action>
     app.router.add_route("*", "/admin/{secret}/cmd", _h_admin_cmd)
