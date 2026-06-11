@@ -24,6 +24,12 @@ if [ "${#GUILDS[@]}" -eq 0 ]; then
 fi
 echo "mirroring ${#GUILDS[@]} guilds"
 
+# Zips Google flagged under its malware policy (2026-06-11): Drive blocks OTHERS
+# from opening their share links, so handing those links out would dead-end users.
+# Still mirrored (owner access works) but excluded from the link map — the bot
+# keeps serving these guilds from Railway directly.
+FLAGGED="1378900499025367145 1512116155085488128 1512203310596362313 1512234194124800213"
+
 ok=0; fail=0; total=0
 declare -A LINKS
 for gid in "${GUILDS[@]}"; do
@@ -38,8 +44,10 @@ for gid in "${GUILDS[@]}"; do
   have=$(rclone lsjson "$DEST/$gid.zip" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);print(d[0]['Size'] if d else 0)" 2>/dev/null)
   if [ "${have:-0}" -eq "$size" ]; then
     echo "HAVE  $gid  (already on Drive, same size)"
-    link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
-    [ -n "$link" ] && LINKS[$gid]="$link"
+    if [[ " $FLAGGED " != *" $gid "* ]]; then
+      link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
+      [ -n "$link" ] && LINKS[$gid]="$link"
+    fi
     ok=$((ok+1)); total=$((total+size)); continue
   fi
   echo "PUSH  $gid  ($(python3 -c "print(f'{$size/1048576:.0f} MB')")) → $DEST/$gid.zip"
@@ -51,8 +59,10 @@ for gid in "${GUILDS[@]}"; do
     echo "RETRY $gid  (attempt $attempt failed)"; sleep $((attempt * 20))
   done
   if [ "$pushed" -eq 1 ]; then
-    link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
-    [ -n "$link" ] && LINKS[$gid]="$link"
+    if [[ " $FLAGGED " != *" $gid "* ]]; then
+      link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
+      [ -n "$link" ] && LINKS[$gid]="$link"
+    fi
     ok=$((ok+1)); total=$((total+size))
   else
     echo "FAIL  $gid  (rclone error after 3 attempts)"; fail=$((fail+1))
