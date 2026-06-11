@@ -1,5 +1,18 @@
 # Work Notes — Discord Backup Bot
 
+## 2026-06-11 (later) — Drive malware flags + sanitizer; integration DEPLOYED
+
+- Google flagged 4 mirrored zips ("malware & similar harmful content") — recipients
+  blocked from those share links. Cause: Discord attachment members (.exe/.bat/.jar/.rar)
+  inside the backups; Drive scans shared zips.
+- Fix: `mirror_to_drive.sh` keeps a `FLAGGED` gid list; those guilds get a SANITIZED
+  Drive copy (7z-strips `*.exe *.dll *.scr *.bat *.cmd *.msi *.vbs *.ps1 *.jar *.apk`),
+  uploaded as a fresh object so the flag clears and the link shares again. Originals
+  stay complete on the Railway volume. If Google flags another guild → add its gid
+  to `FLAGGED`.
+- Bot deployed via `railway up` (Drive-link integration from the morning session is
+  now LIVE). Per user: do NOT mass-unshare links, do NOT auto-request Google review.
+
 ## 2026-06-11 — Google Drive mirror integration (NOT deployed yet)
 
 - Goal: every guild's latest backup mirrored to `gdrive:backupdiscord/by-guild/<gid>.zip`
