@@ -24,11 +24,13 @@ if [ "${#GUILDS[@]}" -eq 0 ]; then
 fi
 echo "mirroring ${#GUILDS[@]} guilds"
 
-# Zips Google flagged under its malware policy (2026-06-11): Drive blocks OTHERS
-# from opening their share links, so handing those links out would dead-end users.
-# Still mirrored (owner access works) but excluded from the link map — the bot
-# keeps serving these guilds from Railway directly.
+# Zips Google flagged under its malware policy (2026-06-11): they contained
+# executable Discord attachments (.exe/.bat/.jar/...). For these guilds we mirror
+# a SANITIZED copy — same backup minus executable member types — uploaded as a
+# fresh Drive object so the malware flag clears and the link is shareable again.
+# The complete originals stay on the Railway volume (restore uses those).
 FLAGGED="1378900499025367145 1512116155085488128 1512203310596362313 1512234194124800213"
+STRIP_TYPES='*.exe *.dll *.scr *.bat *.cmd *.msi *.vbs *.ps1 *.jar *.apk'
 
 ok=0; fail=0; total=0
 declare -A LINKS
@@ -42,12 +44,34 @@ for gid in "${GUILDS[@]}"; do
     echo "SKIP  $gid  (no backup yet / 404)"; fail=$((fail+1)); continue
   fi
   have=$(rclone lsjson "$DEST/$gid.zip" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);print(d[0]['Size'] if d else 0)" 2>/dev/null)
+  if [[ " $FLAGGED " == *" $gid "* ]]; then
+    tmp="/tmp/clean-$gid.zip"
+    echo "CLEAN $gid  (rebuilding Drive copy without executable members)"
+    if ! curl -sf --max-time 1800 -o "$tmp" "$url"; then
+      echo "FAIL  $gid  (download for sanitize failed)"; fail=$((fail+1)); rm -f "$tmp"; continue
+    fi
+    set -f   # pass the *.exe patterns to 7z literally, never shell-expanded
+    7z d -tzip "$tmp" $STRIP_TYPES -r >/dev/null 2>&1
+    set +f
+    csize=$(stat -c%s "$tmp" 2>/dev/null || echo 0)
+    if [ "${have:-0}" -eq "$csize" ]; then
+      echo "HAVE  $gid  (clean copy already current)"
+    else
+      rclone deletefile "$DEST/$gid.zip" >/dev/null 2>&1   # fresh object id → fresh scan, flag clears
+      if ! rclone copyto "$tmp" "$DEST/$gid.zip" --drive-chunk-size 64M >/dev/null 2>&1; then
+        echo "FAIL  $gid  (clean upload failed)"; fail=$((fail+1)); rm -f "$tmp"; continue
+      fi
+    fi
+    rm -f "$tmp"
+    link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
+    [ -n "$link" ] && LINKS[$gid]="$link"
+    ok=$((ok+1)); total=$((total+csize))
+    continue
+  fi
   if [ "${have:-0}" -eq "$size" ]; then
     echo "HAVE  $gid  (already on Drive, same size)"
-    if [[ " $FLAGGED " != *" $gid "* ]]; then
-      link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
-      [ -n "$link" ] && LINKS[$gid]="$link"
-    fi
+    link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
+    [ -n "$link" ] && LINKS[$gid]="$link"
     ok=$((ok+1)); total=$((total+size)); continue
   fi
   echo "PUSH  $gid  ($(python3 -c "print(f'{$size/1048576:.0f} MB')")) → $DEST/$gid.zip"
@@ -59,10 +83,8 @@ for gid in "${GUILDS[@]}"; do
     echo "RETRY $gid  (attempt $attempt failed)"; sleep $((attempt * 20))
   done
   if [ "$pushed" -eq 1 ]; then
-    if [[ " $FLAGGED " != *" $gid "* ]]; then
-      link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
-      [ -n "$link" ] && LINKS[$gid]="$link"
-    fi
+    link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
+    [ -n "$link" ] && LINKS[$gid]="$link"
     ok=$((ok+1)); total=$((total+size))
   else
     echo "FAIL  $gid  (rclone error after 3 attempts)"; fail=$((fail+1))
