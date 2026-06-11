@@ -1289,6 +1289,7 @@ COMMANDS = [
     ("/unban_all", "", "فك الحظر عن كل المحظورين ليرجعوا / unban everyone so they can rejoin"),
     ("/msg", "<message>", "أرسل رسالة خاصة لكل الأعضاء / DM a message to every member"),
     ("/room", "<open|close> [channel] [all_channels]", "افتح أو اقفل روم للجميع / open or lock a channel"),
+    ("/openvoice", "[channel] [all_channels]", "افتح روم صوتي للجميع / open a voice channel for everyone"),
     ("/help", "", "هذه القائمة / this command list"),
 ]
 
@@ -2046,6 +2047,74 @@ async def room_cmd(interaction: discord.Interaction,
         await interaction.response.send_message(
             f"🔒 تم قفل {ch.mention} — ما حدا يقدر يكتب غير الإدارة / "
             f"locked — only staff can post now.", ephemeral=True)
+
+
+# --------------------------------------------------------------------------- #
+#  /openvoice  — open (unlock) a voice channel for @everyone
+# --------------------------------------------------------------------------- #
+@tree.command(
+    name="openvoice",
+    description="افتح روم صوتي للجميع / Open a voice channel for everyone")
+@app_commands.describe(
+    channel="الروم الصوتي (افتراضي: اللي أنت فيه) / voice channel (default: yours)",
+    all_channels="طبّقها على كل الرومات الصوتية / apply to EVERY voice channel")
+async def openvoice_cmd(interaction: discord.Interaction,
+                        channel: discord.VoiceChannel | None = None,
+                        all_channels: bool = False):
+    if not interaction.guild:
+        return
+    if not _admin_only(interaction):
+        return await interaction.response.send_message(
+            "⛔ Manage Server required.", ephemeral=True)
+    # Editing a channel's permission overwrites needs Manage Roles.
+    if not interaction.guild.me.guild_permissions.manage_roles:
+        return await interaction.response.send_message(
+            "⛔ ماعندي صلاحية / I need the **Manage Roles** permission.",
+            ephemeral=True)
+
+    everyone = interaction.guild.default_role
+    reason = f"/openvoice by {interaction.user}"
+
+    async def _apply(ch: discord.VoiceChannel) -> bool:
+        try:
+            ow = ch.overwrites_for(everyone)
+            ow.connect = True
+            ow.speak = True
+            await ch.set_permissions(everyone, overwrite=ow, reason=reason)
+            return True
+        except discord.HTTPException:
+            return False
+
+    if all_channels:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        done = failed = 0
+        for ch in interaction.guild.voice_channels:
+            if await _apply(ch):
+                done += 1
+            else:
+                failed += 1
+            await asyncio.sleep(0.3)        # gentle on the rate limit
+        msg = (f"🔊 تم فتح **{done}** روم صوتي — الكل يقدر يدخل ويتكلم / "
+               f"opened **{done}** voice channels for @everyone.")
+        if failed:
+            msg += f"\n⚠️ تعذّر على **{failed}** / failed on **{failed}**."
+        return await interaction.followup.send(msg, ephemeral=True)
+
+    ch = channel
+    if ch is None and isinstance(interaction.user, discord.Member) \
+            and interaction.user.voice and isinstance(
+                interaction.user.voice.channel, discord.VoiceChannel):
+        ch = interaction.user.voice.channel
+    if ch is None:
+        return await interaction.response.send_message(
+            "حدّد روم صوتي أو ادخل واحد أولاً / pick a voice channel "
+            "or join one first.", ephemeral=True)
+    if not await _apply(ch):
+        return await interaction.response.send_message(
+            f"💥 ماقدرت أعدّل {ch.mention} / couldn't update it.", ephemeral=True)
+    await interaction.response.send_message(
+        f"🔊 تم فتح {ch.mention} — الكل يقدر يدخل ويتكلم الآن / "
+        f"opened for @everyone.", ephemeral=True)
 
 
 # --------------------------------------------------------------------------- #
