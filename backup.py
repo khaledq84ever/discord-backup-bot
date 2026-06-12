@@ -137,13 +137,19 @@ async def fetch_member_list(guild: discord.Guild) -> list:
     """Full member list over HTTP, fetched per backup and freed afterwards.
 
     Replaces the permanent gateway member cache (chunk_guilds_at_startup is now
-    off — caching every guild's members held ~12 GB RSS). Falls back to whatever
-    is cached if the HTTP fetch fails mid-way."""
-    try:
-        return [m async for m in guild.fetch_members(limit=None)]
-    except (discord.HTTPException, discord.ClientException) as e:
-        log.warning("fetch_members(%s) failed: %s — using cached members", guild.id, e)
-        return list(guild.members)
+    off — caching every guild's members held ~12 GB RSS). Raises after retries:
+    the cache can no longer serve as a fallback (it only holds the bot itself),
+    and overwriting the previous snapshot with a near-empty list would silently
+    lose the member list — the caller keeps the old files instead."""
+    last_err = None
+    for attempt in range(3):
+        try:
+            return [m async for m in guild.fetch_members(limit=None)]
+        except (discord.HTTPException, discord.ClientException) as e:
+            last_err = e
+            log.warning("fetch_members(%s) attempt %d failed: %s", guild.id, attempt + 1, e)
+            await asyncio.sleep(2 * (attempt + 1))
+    raise last_err
 
 
 def snapshot_roles(guild: discord.Guild, members: list) -> list:
@@ -414,10 +420,16 @@ async def run_backup(guild: discord.Guild, progress: Progress,
     """Full guild backup. Returns the latest_run dict."""
     storage.write_json(guild.id, "guild.json",    snapshot_guild(guild))
     storage.write_json(guild.id, "channels.json", snapshot_channels(guild))
-    members = await fetch_member_list(guild)
-    storage.write_json(guild.id, "roles.json",    snapshot_roles(guild, members))
-    storage.write_json(guild.id, "members.json",  snapshot_members(members))
-    del members
+    try:
+        members = await fetch_member_list(guild)
+        storage.write_json(guild.id, "roles.json",    snapshot_roles(guild, members))
+        storage.write_json(guild.id, "members.json",  snapshot_members(members))
+        del members
+    except (discord.HTTPException, discord.ClientException) as e:
+        # Keep the previous snapshot's roles.json/members.json rather than
+        # overwriting them with a degraded (near-empty) member list.
+        log.warning("member fetch failed for %s (%s) — keeping previous "
+                    "roles.json/members.json", guild.id, e)
     storage.write_json(guild.id, "emojis.json",   snapshot_emojis(guild))
 
     # All of these do synchronous SQLite work incl. conn.commit(); run them OFF the
