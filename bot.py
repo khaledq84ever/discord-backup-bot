@@ -61,7 +61,14 @@ intents = discord.Intents.default()
 intents.members = True           # snapshot_members
 intents.message_content = True   # archive message text
 
-bot = discord.Client(intents=intents)
+# No permanent member cache: chunking every guild's full member list at startup
+# held ~12 GB RSS across big servers (≈$5/day on Railway). Backups fetch members
+# on demand over HTTP (backup.fetch_member_list); /msg already falls back to
+# fetch_members when the cache is empty. discord.py always caches the bot's own
+# member, so guild.me keeps working.
+bot = discord.Client(intents=intents,
+                     chunk_guilds_at_startup=False,
+                     member_cache_flags=discord.MemberCacheFlags.none())
 tree = app_commands.CommandTree(bot)
 
 # --------------------------------------------------------------------------- #

@@ -133,7 +133,24 @@ def snapshot_channels(guild: discord.Guild) -> list:
     return out
 
 
-def snapshot_roles(guild: discord.Guild) -> list:
+async def fetch_member_list(guild: discord.Guild) -> list:
+    """Full member list over HTTP, fetched per backup and freed afterwards.
+
+    Replaces the permanent gateway member cache (chunk_guilds_at_startup is now
+    off — caching every guild's members held ~12 GB RSS). Falls back to whatever
+    is cached if the HTTP fetch fails mid-way."""
+    try:
+        return [m async for m in guild.fetch_members(limit=None)]
+    except (discord.HTTPException, discord.ClientException) as e:
+        log.warning("fetch_members(%s) failed: %s — using cached members", guild.id, e)
+        return list(guild.members)
+
+
+def snapshot_roles(guild: discord.Guild, members: list) -> list:
+    role_member_ids: dict = {}
+    for m in members:
+        for r in m.roles:
+            role_member_ids.setdefault(r.id, []).append(m.id)
     return [{
         "id":          r.id,
         "name":        r.name,
@@ -144,12 +161,12 @@ def snapshot_roles(guild: discord.Guild) -> list:
         "permissions": r.permissions.value,
         "managed":     r.managed,
         "icon_url":    str(r.icon.url) if getattr(r, "icon", None) else None,
-        "member_ids":  [m.id for m in r.members],
+        "member_ids":  role_member_ids.get(r.id, []),
         "created_at":  r.created_at.isoformat(),
     } for r in guild.roles]
 
 
-def snapshot_members(guild: discord.Guild) -> list:
+def snapshot_members(members: list) -> list:
     """Requires the SERVER MEMBERS INTENT to be enabled."""
     return [{
         "id":         m.id,
@@ -164,7 +181,7 @@ def snapshot_members(guild: discord.Guild) -> list:
         "roles":      [r.id for r in m.roles if r.name != "@everyone"],
         "premium_since": m.premium_since.isoformat() if m.premium_since else None,
         "is_admin":   m.guild_permissions.administrator,
-    } for m in guild.members]
+    } for m in members]
 
 
 def snapshot_emojis(guild: discord.Guild) -> list:
@@ -397,8 +414,10 @@ async def run_backup(guild: discord.Guild, progress: Progress,
     """Full guild backup. Returns the latest_run dict."""
     storage.write_json(guild.id, "guild.json",    snapshot_guild(guild))
     storage.write_json(guild.id, "channels.json", snapshot_channels(guild))
-    storage.write_json(guild.id, "roles.json",    snapshot_roles(guild))
-    storage.write_json(guild.id, "members.json",  snapshot_members(guild))
+    members = await fetch_member_list(guild)
+    storage.write_json(guild.id, "roles.json",    snapshot_roles(guild, members))
+    storage.write_json(guild.id, "members.json",  snapshot_members(members))
+    del members
     storage.write_json(guild.id, "emojis.json",   snapshot_emojis(guild))
 
     # All of these do synchronous SQLite work incl. conn.commit(); run them OFF the

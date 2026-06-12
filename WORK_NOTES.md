@@ -1,3 +1,20 @@
+## 2026-06-12 — kill the ~12GB member cache (Railway cost fix)
+
+- Bot averaged ~12 GB RSS (≈$5.3/day, the main driver of the $50-limit countdown).
+  Cause: `intents.members` makes discord.py chunk + permanently cache EVERY member
+  of EVERY guild at startup; cache was only read during backup snapshots.
+- `bot.py`: Client now gets `chunk_guilds_at_startup=False` +
+  `member_cache_flags=MemberCacheFlags.none()`. `guild.me` is safe (discord.py
+  always caches the bot's own member — verified in 2.7.1 source). `/msg` already
+  falls back to `fetch_members` when the cache is empty (the only cached member,
+  the bot itself, is filtered out as a bot).
+- `backup.py`: new `fetch_member_list()` pulls the full list over HTTP per backup
+  (freed right after); `snapshot_members(members)` + `snapshot_roles(guild, members)`
+  take it as a param — role member_ids now derived from the fetched list instead of
+  the cache-backed `r.members`. members.json format unchanged (restore unaffected).
+- Verified: py_compile + tests/smoke_drive_links.py green (real bot.py import =
+  constructor args validated).
+
 ## 2026-06-11 — zipscan: auto-detect risky zips before Google flags them
 
 - Context: Google flagged 4 guild zips on Drive ("malware & similar harmful content")
