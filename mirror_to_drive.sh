@@ -86,8 +86,9 @@ for gid in "${GUILDS[@]}"; do
       echo "HAVE  $gid  (clean copy already current)"
     else
       rclone deletefile "$DEST/$gid.zip" >/dev/null 2>&1   # fresh object id → fresh scan, flag clears
-      if ! rclone copyto "$tmp" "$DEST/$gid.zip" --drive-chunk-size 64M >/dev/null 2>&1; then
-        echo "FAIL  $gid  (clean upload failed)"; fail=$((fail+1)); rm -f "$tmp"; continue
+      if ! rcerr=$(rclone copyto "$tmp" "$DEST/$gid.zip" --drive-chunk-size 64M 2>&1 >/dev/null); then
+        echo "FAIL  $gid  (clean upload failed: $(echo "$rcerr" | grep -m1 'ERROR\|Failed\|error' || echo "$rcerr" | tail -1))"
+        fail=$((fail+1)); rm -f "$tmp"; continue
       fi
     fi
     rm -f "$tmp"
@@ -99,16 +100,19 @@ for gid in "${GUILDS[@]}"; do
   if [ "${have:-0}" -eq "$size" ]; then
     echo "HAVE  $gid  (already on Drive, same size)"
     link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
-    [ -n "$link" ] && LINKS[$gid]="$link"
+    # post_link here too: it stamps the guild's mirrored-at time on the bot, so
+    # the bot knows the Drive copy is current as of NOW (freshness check).
+    [ -n "$link" ] && { LINKS[$gid]="$link"; post_link "$gid" "$link"; }
     ok=$((ok+1)); total=$((total+size)); continue
   fi
   echo "PUSH  $gid  ($(python3 -c "print(f'{$size/1048576:.0f} MB')")) → $DEST/$gid.zip"
   pushed=0
   for attempt in 1 2 3; do   # stream drops are transient — retry with back-off
-    if rclone copyurl "$url" "$DEST/$gid.zip" --drive-chunk-size 64M >/dev/null 2>&1; then
+    if rcerr=$(rclone copyurl "$url" "$DEST/$gid.zip" --drive-chunk-size 64M 2>&1 >/dev/null); then
       pushed=1; break
     fi
-    echo "RETRY $gid  (attempt $attempt failed)"; sleep $((attempt * 20))
+    echo "RETRY $gid  (attempt $attempt failed: $(echo "$rcerr" | grep -m1 'ERROR\|Failed\|error' || echo "$rcerr" | tail -1))"
+    sleep $((attempt * 20))
   done
   if [ "$pushed" -eq 1 ]; then
     link=$(rclone link "$DEST/$gid.zip" 2>/dev/null)
@@ -119,7 +123,11 @@ for gid in "${GUILDS[@]}"; do
   fi
 done
 
-# Emit the gid->link JSON map.
+# Emit the gid->link JSON map (ops record only — the bot is updated per-guild
+# via post_link at the moment each Drive copy is verified/uploaded, so its
+# mirrored-at timestamps stay honest. A single end-of-run bulk POST would stamp
+# every guild "fresh as of run END", wrongly covering backups that landed
+# mid-run).
 {
   printf '{\n'
   first=1
@@ -134,9 +142,3 @@ echo "------------------------------------------------------------"
 echo "uploaded=$ok  skipped/failed=$fail  total=$(python3 -c "print(f'{$total/1073741824:.2f} GiB')")"
 echo "wrote map: $MAP ($(python3 -c "import json;print(len(json.load(open('$MAP'))))" 2>/dev/null) links)"
 rclone size "$DEST" 2>/dev/null
-
-# Push the map to the bot so /status, /download and /latest hand out Drive
-# links. Harmless before the set_drive_links deploy (404s, logged, non-fatal).
-resp=$(curl -s --max-time 60 -X POST -H 'Content-Type: application/json' \
-       --data-binary @"$MAP" "$BASE/admin/$ADMIN_SECRET/set_drive_links" || true)
-echo "set_drive_links → ${resp:-no response}"

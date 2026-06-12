@@ -38,6 +38,45 @@ assert bot._resolve_restore_link(foreign) == (foreign, None)
 assert bot._latest_link(GID) == DRIVE_URL
 assert bot._latest_link(GID + 1).startswith("https://backup-bot-production")
 
+# ---- freshness: a local zip NEWER than the mirror beats the Drive link ---- #
+import shutil  # noqa: E402
+import time  # noqa: E402
+
+import storage  # noqa: E402
+
+FRESH_GID = 424242424242424242  # fake guild — its data dir is created + removed here
+bot._drive_links[str(FRESH_GID)] = DRIVE_URL
+bot._drive_links_ts.pop(str(FRESH_GID), None)
+try:
+    # No local zips + no mirrored-at ts → trust the Drive copy (volume wiped case).
+    assert bot._drive_link_is_fresh(FRESH_GID), "no local zip should mean fresh"
+    assert bot._latest_link(FRESH_GID) == DRIVE_URL
+
+    # Local zip exists but mirror was never stamped → stale → own /latest link.
+    bdir = storage.backups_dir(FRESH_GID)
+    with open(os.path.join(bdir, "manual-1.zip"), "w") as f:
+        f.write("zip")
+    assert not bot._drive_link_is_fresh(FRESH_GID), "unstamped mirror must be stale"
+    own = bot._latest_link(FRESH_GID)
+    assert own and own.startswith("https://backup-bot-production"), own
+
+    # Mirror stamped AFTER the zip → fresh again → Drive link.
+    bot._drive_links_ts[str(FRESH_GID)] = time.time() + 1
+    assert bot._drive_link_is_fresh(FRESH_GID)
+    assert bot._latest_link(FRESH_GID) == DRIVE_URL
+
+    # A newer backup lands after the stamp → stale → own link.
+    later = os.path.join(bdir, "manual-2.zip")
+    with open(later, "w") as f:
+        f.write("zip")
+    os.utime(later, (time.time() + 60, time.time() + 60))
+    assert not bot._drive_link_is_fresh(FRESH_GID)
+    assert bot._latest_link(FRESH_GID).startswith("https://backup-bot-production")
+finally:
+    bot._drive_links.pop(str(FRESH_GID), None)
+    bot._drive_links_ts.pop(str(FRESH_GID), None)
+    shutil.rmtree(storage.guild_dir(FRESH_GID), ignore_errors=True)
+
 # ---- web layer: /latest redirect + raw bypass, set_drive_links endpoint ---- #
 import asyncio  # noqa: E402
 import json  # noqa: E402
@@ -65,6 +104,23 @@ async def _web_checks():
         assert r.status == 200 and (await r.json())["links"] == 2, await r.text()
         assert bot._drive_links["999"].endswith("NEW")
         assert json.load(open(bot._DRIVE_LINKS_PATH))["999"].endswith("NEW")
+        # The POST stamps mirrored-at, so the freshness check trusts the link.
+        assert bot._drive_links_ts["999"] > 0
+        assert json.load(open(bot._DRIVE_LINKS_TS_PATH))["999"] > 0
+        # Stale mirror (local zip newer than the stamp) → /latest serves the
+        # local zip itself instead of redirecting to the outdated Drive copy.
+        import storage as _st
+        sb = _st.backups_dir(GID)
+        with open(os.path.join(sb, "manual-web.zip"), "w") as f:
+            f.write("zip")
+        try:
+            bot._drive_links_ts[str(GID)] = 1.0  # stamped long before the zip
+            r = await c.get(f"/latest/{t1}/{GID}", allow_redirects=False)
+            assert r.status != 302, "stale Drive link must not redirect"
+        finally:
+            bot._drive_links_ts.pop(str(GID), None)
+            import shutil as _sh
+            _sh.rmtree(_st.guild_dir(GID), ignore_errors=True)
         # Garbage body → 400, bad secret → 403.
         r = await c.post(f"/admin/{bot.ADMIN_SECRET}/set_drive_links", data="not json")
         assert r.status == 400
@@ -73,6 +129,8 @@ async def _web_checks():
 
 
 asyncio.run(_web_checks())
-os.remove(bot._DRIVE_LINKS_PATH)  # don't leave test links where the real bot reads them
+# Don't leave test links/stamps where the real bot reads them.
+os.remove(bot._DRIVE_LINKS_PATH)
+os.remove(bot._DRIVE_LINKS_TS_PATH)
 
 print("OK — bot imports clean, token/link resolution + web endpoints all pass")
