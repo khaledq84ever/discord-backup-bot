@@ -704,6 +704,7 @@ async def on_ready():
     if not _cleanup_started:
         _cleanup_started = True
         bot.loop.create_task(_cleanup_loop())
+        bot.loop.create_task(_page_cache_janitor())
     if config.AUTO_BACKUP_HOURS > 0:
         for g in bot.guilds:
             schedules[g.id] = config.AUTO_BACKUP_HOURS
@@ -731,6 +732,39 @@ async def _cleanup_loop():
             log.warning("cleanup loop error: %s", e)
         cycle += 1
         await asyncio.sleep(3600)   # every hour
+
+
+def _drop_data_page_cache() -> int:
+    """Advise the kernel to drop its page cache for every file under DATA_DIR.
+
+    Railway bills the cgroup's memory.current, which counts kernel page cache —
+    reading/writing the multi-GB zip volume (backups, /latest serving the daily
+    Drive mirror) leaves gigabytes of clean cache billed to this container,
+    dwarfing the actual ~70 MB process. fadvise(DONTNEED) is safe: clean pages
+    are simply re-read from disk on next access."""
+    n = 0
+    for root, _, files in os.walk(config.DATA_DIR):
+        for name in files:
+            try:
+                fd = os.open(os.path.join(root, name), os.O_RDONLY)
+                try:
+                    os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                finally:
+                    os.close(fd)
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
+async def _page_cache_janitor():
+    """Every 10 min, shed the page cache the volume traffic builds up."""
+    while True:
+        await asyncio.sleep(600)
+        try:
+            await asyncio.to_thread(_drop_data_page_cache)
+        except Exception as e:  # noqa: BLE001
+            log.warning("page-cache janitor error: %s", e)
 
 
 WELCOME_URL = os.getenv("LANDING_URL", "https://discordbackupbot.vercel.app")
