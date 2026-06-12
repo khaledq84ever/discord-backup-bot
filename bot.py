@@ -142,7 +142,7 @@ def _latest_link(guild_id: int) -> Optional[str]:
     if drive and _drive_link_is_fresh(guild_id):
         return drive
     if not _PUBLIC_DOMAIN:
-        return None
+        return drive  # stale Drive link still beats no link at all
     return f"https://{_PUBLIC_DOMAIN}/latest/{_guild_token(guild_id)}/{guild_id}"
 
 

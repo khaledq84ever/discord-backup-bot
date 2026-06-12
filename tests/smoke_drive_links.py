@@ -110,8 +110,10 @@ async def _web_checks():
         # Stale mirror (local zip newer than the stamp) → /latest serves the
         # local zip itself instead of redirecting to the outdated Drive copy.
         import storage as _st
+        had_dir = os.path.isdir(os.path.join(_st.config.DATA_DIR, str(GID)))
         sb = _st.backups_dir(GID)
-        with open(os.path.join(sb, "manual-web.zip"), "w") as f:
+        fake_zip = os.path.join(sb, "manual-web.zip")
+        with open(fake_zip, "w") as f:
             f.write("zip")
         try:
             bot._drive_links_ts[str(GID)] = 1.0  # stamped long before the zip
@@ -119,8 +121,11 @@ async def _web_checks():
             assert r.status != 302, "stale Drive link must not redirect"
         finally:
             bot._drive_links_ts.pop(str(GID), None)
-            import shutil as _sh
-            _sh.rmtree(_st.guild_dir(GID), ignore_errors=True)
+            if os.path.exists(fake_zip):  # the handler's prune may have eaten it
+                os.remove(fake_zip)
+            if not had_dir:  # never delete a dev machine's real guild data
+                import shutil as _sh
+                _sh.rmtree(_st.guild_dir(GID), ignore_errors=True)
         # Garbage body → 400, bad secret → 403.
         r = await c.post(f"/admin/{bot.ADMIN_SECRET}/set_drive_links", data="not json")
         assert r.status == 400
