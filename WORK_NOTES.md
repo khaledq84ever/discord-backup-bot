@@ -1,3 +1,23 @@
+## 2026-06-12 (evening) — fresh-link freshness check + honest mirror stamps
+
+- Bug (user-reported): after a manual /backup the bot still handed out the OLD
+  Drive link — the mirror map only refreshed on the daily cron. Fix `bb20e1d`:
+  `drive_links_ts.json` records WHEN each guild's link was mirrored
+  (stamped in `set_drive_links`); `_drive_link_is_fresh()` compares the newest
+  local zip mtime against it, and `_latest_link()` + the `/latest` redirect
+  fall back to the bot's own always-newest link while the mirror is behind.
+  No local zips + no stamp = trust Drive (volume-wiped case).
+- `60a778c` mirror_to_drive.sh: HAVE branch now post_links too (stamps "verified
+  current as of now"), and the end-of-run BULK map POST is gone — it stamped
+  every guild fresh at run END, wrongly covering backups that landed mid-run.
+  rclone stderr is now captured into RETRY/FAIL lines (the 2 morning FAILs were
+  undiagnosable; both healed on the next run).
+- `4a2c320` review fixes: stale Drive link still returned when PUBLIC_DOMAIN is
+  unset (beats no link); smoke test never rmtree's a pre-existing guild dir.
+- VPS crontab: mirror now runs HOURLY at :30 (was daily 05:30) so Drive lags a
+  backup by ≤1h; the freshness fallback covers the gap with a working link.
+- tests/smoke_drive_links.py extended over every freshness branch — GREEN.
+
 ## 2026-06-12 — kill the ~12GB member cache (Railway cost fix)
 
 - Bot averaged ~12 GB RSS (≈$5.3/day, the main driver of the $50-limit countdown).
