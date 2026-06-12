@@ -59,6 +59,14 @@ for gid in "${GUILDS[@]}"; do
   # raw=1: get the zip bytes even after the bot starts 302-redirecting /latest
   # to the Drive mirror (otherwise we'd re-upload Drive's HTML viewer page).
   url="$BASE/latest/$tok/$gid?raw=1"
+  # Status BEFORE size: a 404 error body has a non-zero content-length, which used
+  # to slip past the size check and burn 3 retries on a guild with no snapshot.
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -I "$url")
+  if [ "$code" = "404" ]; then
+    echo "SKIP  $gid  (no backup snapshot yet — kicking one for the next run)"
+    curl -s --max-time 30 -X POST "$BASE/admin/$ADMIN_SECRET/backup?guild=$gid" >/dev/null 2>&1 || true
+    fail=$((fail+1)); continue
+  fi
   size=$(curl -sIL --max-time 30 "$url" | awk 'tolower($0) ~ /^content-length/ {v=$2} END{gsub(/\r/,"",v); print v+0}')
   if [ "${size:-0}" -le 0 ]; then
     echo "SKIP  $gid  (no backup yet / 404)"; fail=$((fail+1)); continue
