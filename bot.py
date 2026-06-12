@@ -108,12 +108,38 @@ try:
 except (OSError, ValueError):
     _drive_links = {}
 
+# When each guild's Drive link was last pushed by the mirror job. A /backup run
+# AFTER that moment makes the Drive copy stale — until the mirror catches up,
+# hand out our own /latest link (it always serves the newest snapshot).
+_DRIVE_LINKS_TS_PATH = os.path.join(config.DATA_DIR, "drive_links_ts.json")
+try:
+    with open(_DRIVE_LINKS_TS_PATH) as _f:
+        _drive_links_ts: dict[str, float] = json.load(_f)
+except (OSError, ValueError):
+    _drive_links_ts = {}
+
+
+def _drive_link_is_fresh(guild_id) -> bool:
+    """True when the Drive mirror still holds this guild's NEWEST snapshot."""
+    gid = str(guild_id)
+    if gid not in _drive_links:
+        return False
+    mirrored_at = _drive_links_ts.get(gid, 0)
+    try:
+        bdir = storage.backups_dir(int(gid))
+        newest = max((os.path.getmtime(os.path.join(bdir, f))
+                      for f in os.listdir(bdir) if f.endswith(".zip")),
+                     default=0)
+    except (OSError, ValueError):
+        newest = 0
+    return newest <= mirrored_at
+
 
 def _latest_link(guild_id: int) -> Optional[str]:
     """A stable per-server link that always serves this guild's newest snapshot.
-    Prefers the Google Drive mirror when one exists for this guild."""
+    Prefers the Google Drive mirror when it exists AND is still current."""
     drive = _drive_links.get(str(guild_id))
-    if drive:
+    if drive and _drive_link_is_fresh(guild_id):
         return drive
     if not _PUBLIC_DOMAIN:
         return None
@@ -188,7 +214,7 @@ async def _h_latest(request):
     # from Google Drive instead of the Railway volume. ?raw=1 bypasses the
     # redirect for callers that need the actual zip bytes (mirror job, /restore).
     drive = _drive_links.get(gid)
-    if drive and "raw" not in request.query:
+    if drive and "raw" not in request.query and _drive_link_is_fresh(gid):
         raise web.HTTPFound(drive)
     # Enforce retention on access: dedup + drop zips older than the retention
     # window, so an expired backup link 404s instead of serving stale data.
@@ -387,9 +413,13 @@ async def _h_admin_set_drive_links(request):
         return web.json_response({"error": "body must be a JSON object {gid: url}"},
                                  status=400)
     _drive_links.update({str(k): str(v) for k, v in incoming.items()})
+    now = time.time()
+    _drive_links_ts.update({str(k): now for k in incoming})
     try:
         with open(_DRIVE_LINKS_PATH, "w") as f:
             json.dump(_drive_links, f, indent=1)
+        with open(_DRIVE_LINKS_TS_PATH, "w") as f:
+            json.dump(_drive_links_ts, f, indent=1)
     except OSError as e:
         return web.json_response({"error": f"persist failed: {e}"}, status=500)
     log.info("drive links updated — %d guilds now mirror to Drive", len(_drive_links))
