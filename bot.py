@@ -986,9 +986,8 @@ def _ago(seconds: Optional[float]) -> str:
 
 
 def _admin_only(interaction: discord.Interaction) -> bool:
-    """Only members with Manage Server or Administrator can run backups."""
-    p = interaction.user.guild_permissions  # type: ignore[union-attr]
-    return p.administrator or p.manage_guild
+    """Anyone can run backups — admin check removed."""
+    return True
 
 
 # --------------------------------------------------------------------------- #
