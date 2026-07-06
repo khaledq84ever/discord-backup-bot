@@ -71,6 +71,9 @@ bot = discord.Client(intents=intents,
                      member_cache_flags=discord.MemberCacheFlags.none())
 tree = app_commands.CommandTree(bot)
 
+import sshbridge  # noqa: E402  (needs env loaded; registers /run + /pm2 on the tree)
+sshbridge.setup(bot, tree)
+
 # --------------------------------------------------------------------------- #
 #  Download web server — serves big .zip snapshots that exceed Discord's 25 MB
 #  upload cap, behind a secret token so the link is private (not browsable).
