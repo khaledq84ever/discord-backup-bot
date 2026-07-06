@@ -1,3 +1,21 @@
+## 2026-07-06 — owner guild lost all cmds but /run; live-healed + hourly watchdog
+
+- User report: his server (KhaledQ8 1461292328252739768) showed ONLY /run —
+  Discord API confirmed: 1 guild cmd there, 0 cmds in 2 other guilds
+  (1335276019501895681, 1493512921177919539), plus a stray GLOBAL 'run'
+  (code intends global to be empty). Healthy guilds have 19 cmds.
+- Live fix via REST (no redeploy): bulk-overwrite PUT of the 19-cmd set
+  (copied from a healthy guild) onto the 3 broken guilds + PUT [] global.
+  Verified: all 30 guilds now 19/19, global empty.
+- `tools/backupbot-cmdcheck` (also ~/bin/ on the VPS, cron hourly at :20):
+  compares every guild's registered cmds against template guild
+  1461292328252739768 and re-PUTs any drift; keeps global empty; refuses to
+  heal if the template itself looks broken. Log: ~/.cache/backupbot-cmdcheck.log
+- ⚠ REPO IS BEHIND DEPLOYED: live bot has /run + /pm2 which are NOT in this
+  repo (19 live vs 17 here). Deploy source was on another machine. Do NOT
+  `railway up` from this clone until bot.py is recovered from the deployment.
+  (railway ssh blocked by host-key verification — to retry later.)
+
 ## 2026-06-12 (evening) — fresh-link freshness check + honest mirror stamps
 
 - Bug (user-reported): after a manual /backup the bot still handed out the OLD

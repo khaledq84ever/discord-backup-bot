@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""backupbot-cmdcheck — hourly watchdog for the Discord backup bot's slash commands.
+
+Checks EVERY guild the bot is in against a template guild's command set; any
+guild missing commands (like KhaledQ8 1461292328252739768 which drifted to just
+/run on 2026-07-06) gets the full set re-registered via bulk-overwrite PUT.
+Also keeps the GLOBAL command list empty (per-guild registration is the design;
+a stray global 'run' was found and wiped 2026-07-06).
+
+Token comes from Railway env (project discord-backup-bot) via the linked clone
+at ~/discord-backup-bot — never stored in this file.
+Log: ~/.cache/backupbot-cmdcheck.log
+"""
+import json, os, subprocess, sys, time, urllib.request, urllib.error
+
+LINKED_DIR = os.path.expanduser("~/discord-backup-bot")
+TEMPLATE_GUILD = "1461292328252739768"          # KhaledQ8 — owner's server, kept full
+LOG = os.path.expanduser("~/.cache/backupbot-cmdcheck.log")
+API = "https://discord.com/api/v10"
+
+def log(msg):
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    print(line)
+    with open(LOG, "a") as fh:
+        fh.write(line + "\n")
+
+def railway_vars():
+    out = subprocess.run(["railway", "variables", "--json"], cwd=LINKED_DIR,
+                         capture_output=True, text=True, timeout=60)
+    return json.loads(out.stdout)
+
+def main():
+    v = railway_vars()
+    tok, app = v["DISCORD_TOKEN"], v["APPLICATION_ID"]
+    H = {"Authorization": f"Bot {tok}", "Content-Type": "application/json",
+         "User-Agent": "DiscordBot (https://discordbackupbot.vercel.app, 1.0)"}
+
+    def req(url, method="GET", body=None):
+        r = urllib.request.Request(url, headers=H, method=method,
+                                   data=json.dumps(body).encode() if body is not None else None)
+        try:
+            with urllib.request.urlopen(r, timeout=30) as resp:
+                return resp.status, (json.load(resp) if resp.status != 204 else None)
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode()[:200]
+
+    st, tmpl = req(f"{API}/applications/{app}/guilds/{TEMPLATE_GUILD}/commands")
+    if st != 200 or not isinstance(tmpl, list) or len(tmpl) < 10:
+        log(f"ABORT: template guild fetch bad (status {st}, {tmpl if not isinstance(tmpl, list) else len(tmpl)} cmds) — refusing to heal from a broken template")
+        sys.exit(1)
+    want = sorted(c["name"] for c in tmpl)
+    payload = [{k: c[k] for k in ("name", "description", "options", "type",
+                                  "default_member_permissions", "dm_permission",
+                                  "name_localizations", "description_localizations")
+                if k in c and c[k] is not None} for c in tmpl]
+
+    st, guilds = req(f"{API}/users/@me/guilds")
+    if st != 200:
+        log(f"ABORT: guild list fetch failed {st}"); sys.exit(1)
+
+    healed = ok = failed = 0
+    for g in guilds:
+        st, cur = req(f"{API}/applications/{app}/guilds/{g['id']}/commands")
+        have = sorted(c["name"] for c in cur) if isinstance(cur, list) else None
+        if have == want:
+            ok += 1
+            continue
+        st, out = req(f"{API}/applications/{app}/guilds/{g['id']}/commands", "PUT", payload)
+        if st == 200:
+            healed += 1
+            log(f"HEALED {g['id']} ({g['name'][:30]}): had {have if have is None else len(have)} -> {len(want)} cmds")
+        else:
+            failed += 1
+            log(f"FAILED {g['id']} ({g['name'][:30]}): PUT {st} {str(out)[:120]}")
+        time.sleep(1)   # stay far below rate limits
+
+    # global set must stay empty (guild registration is the design)
+    st, gl = req(f"{API}/applications/{app}/commands")
+    if isinstance(gl, list) and gl:
+        st, _ = req(f"{API}/applications/{app}/commands", "PUT", [])
+        log(f"wiped {len(gl)} stray GLOBAL cmd(s): {[c['name'] for c in gl]} (PUT {st})")
+
+    log(f"done: {ok} ok, {healed} healed, {failed} failed of {len(guilds)} guilds ({len(want)} cmds expected)")
+
+if __name__ == "__main__":
+    main()
