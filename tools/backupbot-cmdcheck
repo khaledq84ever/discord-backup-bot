@@ -11,7 +11,8 @@ Token comes from Railway env (project discord-backup-bot) via the linked clone
 at ~/discord-backup-bot — never stored in this file.
 Log: ~/.cache/backupbot-cmdcheck.log
 """
-import json, os, subprocess, sys, time, urllib.request, urllib.error
+import json
+import os, os, subprocess, sys, time, urllib.request, urllib.error
 
 LINKED_DIR = os.path.expanduser("~/discord-backup-bot")
 TEMPLATE_GUILD = "1461292328252739768"          # KhaledQ8 — owner's server, kept full
@@ -25,7 +26,7 @@ def log(msg):
         fh.write(line + "\n")
 
 def railway_vars():
-    out = subprocess.run(["railway", "variables", "--json"], cwd=LINKED_DIR,
+    out = subprocess.run([os.path.expanduser("~/.railway/bin/railway"), "variables", "--json"], cwd=LINKED_DIR,
                          capture_output=True, text=True, timeout=60)
     return json.loads(out.stdout)
 

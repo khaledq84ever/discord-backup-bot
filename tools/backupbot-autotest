@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""BackUpBot auto-test: trigger a real backup via the admin API, watch the bot
+logs until it finishes, then verify the /latest download link serves a file.
+
+Cron-safe (absolute railway path, secrets pulled live, never stored).
+Log: ~/.cache/backupbot-autotest.log
+"""
+import hashlib
+import hmac
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+
+BASE = "https://backup-bot-production.up.railway.app"
+GUILD = "1461292328252739768"  # Khaled's guild (watchdog template guild)
+LINKED_DIR = os.path.expanduser("~/discord-backup-bot")
+LOG = os.path.expanduser("~/.cache/backupbot-autotest.log")
+RAILWAY = os.path.expanduser("~/.railway/bin/railway")
+UA = {"User-Agent": "backupbot-autotest/1.0"}
+
+
+def log(msg):
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    print(line)
+    with open(LOG, "a") as fh:
+        fh.write(line + "\n")
+
+
+def http(method, url, timeout=30):
+    req = urllib.request.Request(url, method=method, headers=UA)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.status, r.read()
+
+
+def main():
+    out = subprocess.run([RAILWAY, "variables", "--json"], cwd=LINKED_DIR,
+                         capture_output=True, text=True, timeout=60)
+    v = json.loads(out.stdout)
+    admin = (v.get("ADMIN_SECRET")
+             or hashlib.sha256(("admin:" + v["DOWNLOAD_SECRET"]).encode()).hexdigest()[:32])
+    dl_token = hmac.new(v["DOWNLOAD_SECRET"].encode(), GUILD.encode(),
+                        hashlib.sha256).hexdigest()[:24]
+
+    # 1. bot alive?
+    st, body = http("GET", f"{BASE}/admin/{admin}/ping")
+    guilds = len(json.loads(body).get("guilds", []))
+    log(f"ping: {st}, bot in {guilds} guilds")
+
+    # 2. trigger backup
+    st, body = http("POST", f"{BASE}/admin/{admin}/backup?guild={GUILD}")
+    log(f"backup trigger: {st} {body.decode()[:100]}")
+
+    # 3. wait for 'backup DONE' in bot logs (up to 10 min)
+    deadline = time.time() + 600
+    done = False
+    while time.time() < deadline:
+        time.sleep(20)
+        st, body = http("GET", f"{BASE}/admin/{admin}/logs?n=40")
+        text = body.decode(errors="replace")
+        if f"DONE for {GUILD}" in text:
+            done = True
+            for line in text.splitlines():
+                if f"DONE for {GUILD}" in line:
+                    log(f"bot log: {line.strip()[-160:]}")
+            break
+        if f"backup failed for {GUILD}" in text:
+            log("FAIL: bot log shows backup failed")
+            sys.exit(1)
+    if not done:
+        log("FAIL: backup did not finish within 10 min")
+        sys.exit(1)
+
+    # 4. verify the stable download link serves the file
+    req = urllib.request.Request(f"{BASE}/latest/{dl_token}/{GUILD}?raw=1",
+                                 method="GET", headers=UA)
+    with urllib.request.urlopen(req, timeout=120) as r:
+        first = r.read(4)
+        size = r.headers.get("Content-Length", "?")
+    if first[:2] != b"PK":
+        log(f"FAIL: /latest did not return a zip (first bytes {first!r})")
+        sys.exit(1)
+    log(f"OK: backup file generated, /latest link serves zip ({size} bytes)")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:  # noqa: BLE001
+        log(f"FAIL: {e!r}")
+        sys.exit(1)
