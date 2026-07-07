@@ -12,7 +12,7 @@ at ~/discord-backup-bot — never stored in this file.
 Log: ~/.cache/backupbot-cmdcheck.log
 """
 import json
-import os, os, subprocess, sys, time, urllib.request, urllib.error
+import os, subprocess, sys, time, urllib.request, urllib.error
 
 LINKED_DIR = os.path.expanduser("~/discord-backup-bot")
 TEMPLATE_GUILD = "1461292328252739768"          # KhaledQ8 — owner's server, kept full
@@ -21,7 +21,8 @@ API = "https://discord.com/api/v10"
 
 def log(msg):
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
-    print(line)
+    if sys.stdout.isatty():
+        print(line)  # cron already appends stdout to LOG; avoid double lines
     with open(LOG, "a") as fh:
         fh.write(line + "\n")
 

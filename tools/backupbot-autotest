@@ -24,7 +24,8 @@ UA = {"User-Agent": "backupbot-autotest/1.0"}
 
 def log(msg):
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
-    print(line)
+    if sys.stdout.isatty():
+        print(line)  # cron already appends stdout to LOG; avoid double lines
     with open(LOG, "a") as fh:
         fh.write(line + "\n")
 
